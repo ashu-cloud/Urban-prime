@@ -19,6 +19,7 @@ plugins:
   - api-breaker
   - limit-req
   - jwt-auth
+  - grpc-transcode
   - cors
   - prometheus
   - proxy-rewrite

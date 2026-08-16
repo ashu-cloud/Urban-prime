@@ -24,6 +24,7 @@ dev-logs:
 
 tidy:
 	cd pkg && go mod tidy
+	cd Services/auth-service && go mod tidy
 	cd Services/trip-service && go mod tidy
 	cd Services/driver-service && go mod tidy
 	cd Services/location-service && go mod tidy
@@ -31,6 +32,7 @@ tidy:
 	cd Services/notification-service && go mod tidy
 
 build: tidy
+	cd Services/auth-service && go build -o bin/auth-service ./cmd
 	cd Services/trip-service && go build -o bin/trip-service ./cmd
 	cd Services/driver-service && go build -o bin/driver-service ./cmd
 	cd Services/location-service && go build -o bin/location-service ./cmd

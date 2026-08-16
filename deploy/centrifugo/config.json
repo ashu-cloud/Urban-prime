@@ -7,16 +7,30 @@
   "admin_secret": "my_admin_secret",
   "namespaces": [
     {
-      "name": "rider",
-      "publish": true,
+      "name": "trip",
+      "publish": false,
       "subscribe": true,
-      "presence": true
+      "presence": true,
+      "history_size": 10,
+      "history_ttl": "60s",
+      "recover": true
+    },
+    {
+      "name": "tracking",
+      "publish": false,
+      "subscribe": true,
+      "presence": false,
+      "history_size": 5,
+      "history_ttl": "30s",
+      "recover": true
     },
     {
       "name": "driver",
-      "publish": true,
+      "publish": false,
       "subscribe": true,
-      "presence": true
+      "presence": true,
+      "history_size": 5,
+      "history_ttl": "30s"
     }
   ]
 }

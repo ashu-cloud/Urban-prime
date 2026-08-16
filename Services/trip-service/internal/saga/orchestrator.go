@@ -14,18 +14,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// Orchestrator is the core Saga Orchestrator engine.
-// It manages distributed transaction steps for a trip across multiple microservices.
-// In Go, structs store state/references, and methods attached to structs define behavior.
 type Orchestrator struct {
-	repo       *repository.TripRepository // Data persistence layer
-	osrmClient *osrm.Client               // Road routing client
-	calculator *pricing.Calculator         // Fare calculation engine
-	producer   *kafka.Producer            // Async event publisher
+	repo       *repository.TripRepository
+	osrmClient *osrm.Client
+	calculator *pricing.Calculator
+	producer   *kafka.Producer
 }
 
-// NewOrchestrator is a Constructor Function.
-// Go doesn't have standard OOP class constructors, so standard idiom is to write functions named New<StructName>.
 func NewOrchestrator(
 	repo *repository.TripRepository,
 	osrmClient *osrm.Client,
@@ -40,7 +35,6 @@ func NewOrchestrator(
 	}
 }
 
-// CreateTripCmd is a Data Transfer Object (DTO) holding raw user parameters from gRPC request.
 type CreateTripCmd struct {
 	RiderID         string
 	Pickup          domain.Location
@@ -49,36 +43,24 @@ type CreateTripCmd struct {
 	PaymentMethodID string
 }
 
-// ExecuteCreateTripSaga runs the complete Saga for initiating a new ride request.
-//
-// WHAT IS THE SAGA PATTERN?
-// In microservices, we cannot use database transactions (ACID / 2PC) across multiple services/databases.
-// Saga breaks a transaction into sequential steps. If any step fails, compensating actions are executed
-// in reverse order to rollback previous steps and maintain consistency.
 func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTripCmd) (*domain.Trip, error) {
-	// Generate a unique UUID v4 for the new trip (e.g., "550e8400-e29b-41d4-a716-446655440000")
 	tripID := uuid.New().String()
 	now := time.Now()
 
 	logger.Info(ctx, "Saga Step 1: Querying OSRM for routing & computing fare", "trip_id", tripID)
 
-	// STEP 1: ROUTING (Call OSRM HTTP Engine)
-	// Calculates real driving distance (km) and estimated duration (seconds) between pickup & dropoff coordinates
 	route, err := s.osrmClient.GetRoute(ctx, cmd.Pickup, cmd.Dropoff)
 	if err != nil {
 		logger.Error(ctx, "OSRM routing failed", "error", err)
 		return nil, fmt.Errorf("failed to calculate trip route: %w", err)
 	}
 
-	// STEP 2: FARE CALCULATION (Uber Formula)
-	// Base fare + (per_km_rate * distance_km) + (per_min_rate * duration_mins) * surge_multiplier
 	breakdown := s.calculator.CalculateFare(route.DistanceKm, route.DurationSecs, 1.0)
 
-	// STEP 3: CONSTRUCT TRIP DOMAIN ENTITY
 	trip := &domain.Trip{
 		ID:              tripID,
 		RiderID:         cmd.RiderID,
-		Status:          domain.StatusRequested, // Initial status: REQUESTED
+		Status:          domain.StatusRequested,
 		Pickup:          cmd.Pickup,
 		Dropoff:         cmd.Dropoff,
 		VehicleType:     cmd.VehicleType,
@@ -101,15 +83,11 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 		UpdatedAt: now,
 	}
 
-	// STEP 4: PERSIST TO POSTGRESQL DATABASE
-	// Inserts trip row into PostgreSQL table 'trips' with JSONB audit saga_log
 	if err := s.repo.Create(ctx, trip); err != nil {
 		logger.Error(ctx, "Failed to persist trip to DB", "error", err)
 		return nil, err
 	}
 
-	// STEP 5: PUBLISH EVENT TO KAFKA
-	// Emits `TripCreated` payload to Kafka topic `trip.events.v1` for downstream services (Notifications, Analytics)
 	eventPayload := kafka.TripEventPayload{
 		TripID:        trip.ID,
 		RiderID:       trip.RiderID,
@@ -128,9 +106,6 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 		logger.Warn(ctx, "Publishing trip created event returned warning", "error", err)
 	}
 
-	// STEP 6: TRANSITION STATE TO 'MATCHING'
-	// State Machine Transition: REQUESTED -> MATCHING
-	// Driver Service will listen to this event and begin searching for nearby available drivers.
 	matchingStep := domain.SagaStepLog{
 		StepName:  "TRANSITION_MATCHING",
 		Status:    "SUCCESS",
@@ -138,7 +113,6 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 		Timestamp: time.Now(),
 	}
 
-	// If database state update fails, execute COMPENSATING TRANSACTION to rollback!
 	if err := s.repo.UpdateStatus(ctx, trip.ID, domain.StatusMatching, matchingStep); err != nil {
 		logger.Error(ctx, "Saga Compensation Triggered: Failed to update status to MATCHING", "error", err)
 		s.CompensateTripCreation(ctx, trip.ID, "Failed state transition to MATCHING")
@@ -148,7 +122,6 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 	trip.Status = domain.StatusMatching
 	trip.SagaLog = append(trip.SagaLog, matchingStep)
 
-	// Publish `TripMatchingStarted` Event to Kafka
 	eventPayload.Status = string(domain.StatusMatching)
 	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", eventPayload)
 
@@ -157,9 +130,48 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 	return trip, nil
 }
 
-// CompensateTripCreation is the COMPENSATING TRANSACTION function.
-// If any downstream step fails (e.g. payment hold fails or no drivers accept), this function is invoked
-// to mark the trip as CANCELLED, append compensation audit log, and broadcast cancellation to Kafka.
+// AssignDriverToTrip updates trip state machine to ASSIGNED and records matched driver_id
+func (s *Orchestrator) AssignDriverToTrip(ctx context.Context, tripID, driverID string) error {
+	step := domain.SagaStepLog{
+		StepName:  "DRIVER_MATCHED_ASSIGNED",
+		Status:    "SUCCESS",
+		Details:   fmt.Sprintf("Matched and assigned driver %s", driverID),
+		Timestamp: time.Now(),
+	}
+
+	if err := s.repo.AssignDriver(ctx, tripID, driverID, domain.StatusAssigned, step); err != nil {
+		return fmt.Errorf("failed to assign driver in repository: %w", err)
+	}
+
+	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
+		TripID:    tripID,
+		Status:    string(domain.StatusAssigned),
+		Timestamp: time.Now(),
+	})
+
+	return nil
+}
+
+// CompensateNoDriverAvailable is executed when driver dispatch loop finishes with no driver acceptance
+func (s *Orchestrator) CompensateNoDriverAvailable(ctx context.Context, tripID string) {
+	logger.Warn(ctx, "Executing Saga Compensation: Reverting trip status to CANCELLED_NO_DRIVER", "trip_id", tripID)
+
+	step := domain.SagaStepLog{
+		StepName:  "COMPENSATE_NO_DRIVER_AVAILABLE",
+		Status:    "COMPENSATED",
+		Details:   "All nearby candidate drivers declined or timed out",
+		Timestamp: time.Now(),
+	}
+
+	_ = s.repo.UpdateStatus(ctx, tripID, domain.StatusCancelledNoDriver, step)
+
+	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
+		TripID:    tripID,
+		Status:    string(domain.StatusCancelledNoDriver),
+		Timestamp: time.Now(),
+	})
+}
+
 func (s *Orchestrator) CompensateTripCreation(ctx context.Context, tripID string, reason string) {
 	logger.Warn(ctx, "Executing Saga Compensating Transaction for trip", "trip_id", tripID, "reason", reason)
 
@@ -170,10 +182,8 @@ func (s *Orchestrator) CompensateTripCreation(ctx context.Context, tripID string
 		Timestamp: time.Now(),
 	}
 
-	// Revert status to CANCELLED in DB
 	_ = s.repo.UpdateStatus(ctx, tripID, domain.StatusCancelled, compStep)
 
-	// Publish cancellation event to Kafka
 	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
 		TripID:    tripID,
 		Status:    string(domain.StatusCancelled),

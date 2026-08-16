@@ -13,26 +13,20 @@ import (
 )
 
 // TripRepository encapsulates raw SQL database queries for the 'trips' table in PostgreSQL.
-// Senior engineers prefer raw SQL with `pgx` over heavy ORMs like GORM for maximum performance,
-// precise query control, and zero hidden magic.
 type TripRepository struct {
-	pool *pgxpool.Pool // Pointer to shared PostgreSQL connection pool
+	pool *pgxpool.Pool
 }
 
-// NewTripRepository is constructor function for TripRepository
 func NewTripRepository(pool *pgxpool.Pool) *TripRepository {
 	return &TripRepository{pool: pool}
 }
 
-// Create executes an INSERT query to store a new trip record in PostgreSQL
 func (r *TripRepository) Create(ctx context.Context, trip *domain.Trip) error {
-	// Marshal the Go slice `[]SagaStepLog` into a raw JSON byte array for the PostgreSQL JSONB column `saga_log`
 	sagaJSON, err := json.Marshal(trip.SagaLog)
 	if err != nil {
 		return fmt.Errorf("failed to marshal saga_log: %w", err)
 	}
 
-	// Parameterized SQL Query: $1, $2, $3... placeholders prevent SQL Injection vulnerabilities!
 	query := `
 		INSERT INTO trips (
 			trip_id, rider_id, driver_id, status,
@@ -51,7 +45,6 @@ func (r *TripRepository) Create(ctx context.Context, trip *domain.Trip) error {
 		)
 	`
 
-	// r.pool.Exec executes the query against PostgreSQL pool
 	_, err = r.pool.Exec(ctx, query,
 		trip.ID, trip.RiderID, trip.DriverID, string(trip.Status),
 		trip.Pickup.Latitude, trip.Pickup.Longitude, trip.Pickup.Address,
@@ -68,7 +61,6 @@ func (r *TripRepository) Create(ctx context.Context, trip *domain.Trip) error {
 	return nil
 }
 
-// GetByID queries a single trip from PostgreSQL by UUID
 func (r *TripRepository) GetByID(ctx context.Context, id string) (*domain.Trip, error) {
 	query := `
 		SELECT 
@@ -86,7 +78,6 @@ func (r *TripRepository) GetByID(ctx context.Context, id string) (*domain.Trip, 
 	var statusStr string
 	var sagaBytes []byte
 
-	// QueryRow returns a single row. Scan() maps database column values directly to Go variables.
 	err := r.pool.QueryRow(ctx, query, id).Scan(
 		&t.ID, &t.RiderID, &t.DriverID, &statusStr,
 		&t.Pickup.Latitude, &t.Pickup.Longitude, &t.Pickup.Address,
@@ -97,17 +88,14 @@ func (r *TripRepository) GetByID(ctx context.Context, id string) (*domain.Trip, 
 	)
 
 	if err != nil {
-		// Check if error is 'pgx.ErrNoRows' (meaning 0 matching rows found for UUID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("trip not found: %s", id)
 		}
 		return nil, fmt.Errorf("db get trip failed: %w", err)
 	}
 
-	// Convert string status back to domain.TripStatus type
 	t.Status = domain.TripStatus(statusStr)
 
-	// Unmarshal raw JSONB bytes into Go slice []SagaStepLog
 	if len(sagaBytes) > 0 {
 		_ = json.Unmarshal(sagaBytes, &t.SagaLog)
 	}
@@ -115,15 +103,12 @@ func (r *TripRepository) GetByID(ctx context.Context, id string) (*domain.Trip, 
 	return &t, nil
 }
 
-// UpdateStatus atomically updates the trip status and appends a step entry to the JSONB saga_log column
 func (r *TripRepository) UpdateStatus(ctx context.Context, id string, newStatus domain.TripStatus, step domain.SagaStepLog) error {
 	stepJSON, err := json.Marshal([]domain.SagaStepLog{step})
 	if err != nil {
 		return fmt.Errorf("failed to marshal saga step: %w", err)
 	}
 
-	// PostgreSQL JSONB Concatenation Operator (`||`):
-	// Appends new step JSON object to existing JSONB array in database without rewriting full log!
 	query := `
 		UPDATE trips
 		SET 
@@ -138,9 +123,37 @@ func (r *TripRepository) UpdateStatus(ctx context.Context, id string, newStatus 
 		return fmt.Errorf("db update status failed: %w", err)
 	}
 
-	// Check if any row was actually updated
 	if res.RowsAffected() == 0 {
 		return fmt.Errorf("trip not found for status update: %s", id)
+	}
+
+	return nil
+}
+
+// AssignDriver atomically sets driver_id, updates status to ASSIGNED, and appends saga step log
+func (r *TripRepository) AssignDriver(ctx context.Context, tripID, driverID string, newStatus domain.TripStatus, step domain.SagaStepLog) error {
+	stepJSON, err := json.Marshal([]domain.SagaStepLog{step})
+	if err != nil {
+		return fmt.Errorf("failed to marshal saga step: %w", err)
+	}
+
+	query := `
+		UPDATE trips
+		SET 
+			driver_id = $1,
+			status = $2,
+			saga_log = saga_log || $3::jsonb,
+			updated_at = $4
+		WHERE trip_id = $5
+	`
+
+	res, err := r.pool.Exec(ctx, query, driverID, string(newStatus), stepJSON, time.Now(), tripID)
+	if err != nil {
+		return fmt.Errorf("db assign driver failed: %w", err)
+	}
+
+	if res.RowsAffected() == 0 {
+		return fmt.Errorf("trip not found for driver assignment: %s", tripID)
 	}
 
 	return nil

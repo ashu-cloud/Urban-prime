@@ -1,45 +1,42 @@
 package main
 
-// IMPORTS SECTION:
-// Go standard library, internal workspace packages, and third-party drivers
 import (
-	"context" // Manages request context, cancellation signals, and deadlines
-	"errors"  // Helper for error checking
-	"fmt"     // String formatting functions
-	"net"     // Network TCP listener primitives
-	"os"      // Environment variables and process management
-	"os/signal" // OS interrupt signal handler
-	"syscall"   // System call constants (SIGINT, SIGTERM)
-	"time"      // Time units and timeouts
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	// Local workspace modules:
-	driverv1 "github.com/cab-booking/proto/gen/driver/v1" // Generated gRPC interfaces & protobuf types
-	"github.com/cab-booking/driver-service/internal/config"   // Environment loader
-	"github.com/cab-booking/driver-service/internal/dispatch" // Matchmaking dispatch loop engine
-	"github.com/cab-booking/driver-service/internal/geo"      // Redis Geo spatial indexing service
-	"github.com/cab-booking/driver-service/internal/handler"  // gRPC service request handler
-	"github.com/cab-booking/driver-service/internal/kafka"    // Kafka match event producer
-	"github.com/cab-booking/driver-service/internal/repository" // Raw SQL PostgreSQL driver repository
-	"github.com/cab-booking/pkg/logger"                       // Custom JSON structured logger
+	driverv1 "github.com/cab-booking/proto/gen/driver/v1"
+	"github.com/cab-booking/driver-service/internal/config"
+	"github.com/cab-booking/driver-service/internal/dispatch"
+	"github.com/cab-booking/driver-service/internal/geo"
+	"github.com/cab-booking/driver-service/internal/handler"
+	"github.com/cab-booking/driver-service/internal/kafka"
+	"github.com/cab-booking/driver-service/internal/repository"
+	"github.com/cab-booking/pkg/logger"
 
-	// Third-party open-source libraries:
-	"github.com/golang-migrate/migrate/v4" // SQL database migration runner
-	_ "github.com/golang-migrate/migrate/v4/database/postgres" // Blank import (`_`) registers Postgres migration driver
-	_ "github.com/golang-migrate/migrate/v4/source/file"       // Blank import (`_`) registers local file driver
-	"github.com/jackc/pgx/v5/pgxpool"                           // High-performance PostgreSQL connection pool
-	"github.com/redis/go-redis/v9"                             // Official Redis client supporting Geo commands
-	"google.golang.org/grpc"                                    // Google gRPC framework
-	"google.golang.org/grpc/reflection"                         // EnablesPostman/grpcurl dynamic API inspection
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-// main() is the entry point for the Driver Service microservice binary.
 func main() {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cfg := config.Load()
 
 	logger.Info(ctx, "Initializing Driver Service (Matchmaking Engine)...", "port", cfg.Port)
 
-	// 1. DATABASE CONNECTION (PostgreSQL Pool)
+	// 1. DATABASE CONNECTION
 	pool, err := initDatabase(ctx, cfg.DatabaseDSN)
 	if err != nil {
 		logger.Error(ctx, "Failed to connect to PostgreSQL", "error", err)
@@ -48,13 +45,13 @@ func main() {
 		runMigrations(ctx, cfg.DatabaseDSN)
 	}
 
-	// 2. IN-MEMORY REDIS SPATIAL INDEX SETUP
+	// 2. REDIS SETUP
 	redisClient := initRedis(ctx, cfg.RedisAddr)
 	if redisClient != nil {
 		defer redisClient.Close()
 	}
 
-	// 3. REPOSITORIES & SERVICES INJECTION
+	// 3. REPOSITORIES & SERVICES
 	var repo *repository.DriverRepository
 	if pool != nil {
 		repo = repository.NewDriverRepository(pool)
@@ -62,7 +59,7 @@ func main() {
 
 	geoService := geo.NewGeoService(redisClient)
 
-	// 4. KAFKA EVENT PRODUCER
+	// 4. KAFKA PRODUCER
 	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
 	if err != nil {
 		logger.Warn(ctx, "Kafka producer initialized with warning", "error", err)
@@ -72,14 +69,27 @@ func main() {
 	}
 
 	// 5. DISPATCH LOOP ENGINE
-	// The Dispatch Loop is the core matchmaking engine that searches Redis Geo for nearest drivers,
-	// offers rides sequentially, enforces timeouts, and falls back to next nearest candidates.
 	dispatchLoop := dispatch.NewDispatchLoop(geoService, repo, producer)
 
-	// 6. gRPC SERVICE HANDLER
+	// 6. KAFKA CONSUMER (Listens for `trip.events.v1 { MATCHING }` to trigger dispatch loop)
+	dispatchAdapter := func(c context.Context, tripID string, pickupLat, pickupLng float64, vehicleType string) error {
+		_, err := dispatchLoop.FindAndDispatchDriver(c, tripID, pickupLat, pickupLng, vehicleType)
+		return err
+	}
+
+	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, "driver-service-group", dispatchAdapter)
+	if err != nil {
+		logger.Warn(ctx, "Kafka consumer init warning", "error", err)
+	}
+	if consumer != nil {
+		go consumer.Start(ctx)
+		logger.Info(ctx, "Driver Service Kafka consumer loop LIVE — ready to match trips")
+	}
+
+	// 7. gRPC SERVICE HANDLER
 	driverHandler := handler.NewDriverHandler(dispatchLoop, geoService, repo)
 
-	// 7. START gRPC SERVER ON PORT 50052
+	// 8. START gRPC SERVER ON PORT 50052
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.Port))
 	if err != nil {
 		logger.Error(ctx, "Failed to listen on port", "port", cfg.Port, "error", err)
@@ -97,17 +107,17 @@ func main() {
 		}
 	}()
 
-	// 8. GRACEFUL SHUTDOWN HANDLING
+	// 9. GRACEFUL SHUTDOWN
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info(ctx, "Shutting down Driver Service gracefully...")
+	cancel()
 	grpcServer.GracefulStop()
 	logger.Info(ctx, "Driver Service stopped cleanly")
 }
 
-// initDatabase creates and validates PostgreSQL pgx connection pool
 func initDatabase(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -133,7 +143,6 @@ func initDatabase(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// initRedis initializes connections to Redis in-memory datastore
 func initRedis(ctx context.Context, addr string) *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr:         addr,
@@ -154,7 +163,6 @@ func initRedis(ctx context.Context, addr string) *redis.Client {
 	return client
 }
 
-// runMigrations executes SQL migrations (.up.sql files) on startup
 func runMigrations(ctx context.Context, dsn string) {
 	logger.Info(ctx, "Running database migrations for driver-service...")
 	m, err := migrate.New("file://migrations", dsn)
