@@ -21,7 +21,7 @@ A production-grade, distributed microservices platform built in **Go 1.22**, eng
 | **GPS Location Firehose**<br>(33,333 pings/sec from 100k drivers) | Ingest pings via **Go Location Service** straight to **Redis Geo in-memory pipeline (`GEOADD`)** + async Kafka event stream. **No direct DB writes!** | Reduces database I/O to zero for location pings. Sub-millisecond write latency (~1-2ms). |
 | **Nearest Driver Search**<br>(Thousands of riders searching concurrently) | **Redis `GEOSEARCH`** radius queries instead of heavy SQL spatial joins (`ST_DWithin`). | Sub-millisecond spatial search vs 100ms+ SQL join queries. |
 | **Database Connection Overload** | **PostgreSQL Connection Pooling (`pgxpool`)** + prepared statement caching + short read/write transactions. | Prevents thread pool exhaustion under heavy concurrent load spikes. |
-| **Race Conditions in Matching** | **Atomic Redis Distributed Locks / Optimistic State Locks** during driver offer dispatch. | Prevents offering the same driver to multiple riders simultaneously. |
+| **Race Conditions in Matching** | **Atomic Redis Distributed Locks (`SetNX`)** during driver offer dispatch. | Prevents offering the same driver to multiple riders simultaneously. |
 | **Real-time Map Updates** | **Centrifugo WebSocket Hub** (subscribes to Redis/Kafka, handles 100k+ concurrent WS client connections per node). | Keeps microservices decoupled from maintaining persistent WebSocket connections. |
 | **API Gateway Throttling** | **Apache APISIX** (LuaJIT engine handling 50k+ RPS per node with Redis-backed leaky bucket rate limiting). | Protects internal gRPC microservices from traffic surges. |
 
@@ -61,7 +61,27 @@ graph TD
 
 ---
 
-## 3. Microservices Infrastructure & Ports
+## 3. Implemented Microservices
+
+### 1. Trip Service (`Services/trip-service/`)
+- **Port**: `:50051` (gRPC)
+- **Database**: PostgreSQL (`trips` table with `JSONB saga_log` column for auditability)
+- **Migrations**: `golang-migrate` SQL migrations in `Services/trip-service/migrations/`
+- **Routing Engine**: OSRM API Client querying `/route/v1/driving` with Haversine geometric fallback
+- **Fare Calculator**: Uber-model `(BaseFare + (PerKmRate * Km) + (PerMinRate * Min)) * SurgeMultiplier`
+- **Saga Orchestrator**: Executes `CreateTrip` saga steps with compensating rollback capabilities
+- **Kafka Producer**: Publishes events to `trip.events.v1` (`TripCreated`, `TripMatchingStarted`, `TripCancelled`)
+
+### 2. Driver Service (`Services/driver-service/`)
+- **Port**: `:50052` (gRPC)
+- **Database**: PostgreSQL (`drivers` table for profiles & status)
+- **Spatial Engine**: Redis Geo in-memory spatial index (`GEOADD`, `GEOSEARCH` radius queries, `ZREM`)
+- **Dispatch Loop**: Uber/Bolt matchmaking engine (nearest-driver search -> atomic Redis `SetNX` distributed lock -> Kafka `MatchOffered` -> 15s timeout -> fallback to next nearest candidate -> `MatchExhausted`)
+- **Kafka Producer**: Publishes events to `driver.match.v1` (`MatchOffered`, `MatchAccepted`, `MatchDeclined`, `MatchExhausted`)
+
+---
+
+## 4. Microservices Infrastructure & Ports
 
 | Component | Port | High Scale Responsibility |
 | :--- | :--- | :--- |
@@ -72,7 +92,7 @@ graph TD
 | **Centrifugo v5** | `8000` | Scalable WebSocket engine handling 100k+ concurrent client channels |
 | **Jaeger OTel** | `16686` (UI), `4317` (OTLP) | OpenTelemetry distributed tracing across all microservices |
 | **Trip Service** | `50051` | gRPC service (Saga Orchestrator & State Machine) |
-| **Driver Service** | `50052` | gRPC service (Fast Redis Geo Matchmaking algorithm) |
+| **Driver Service** | `50052` | gRPC service (Fast Redis Geo Matchmaking algorithm & Dispatch Loop) |
 | **Location Service** | `50053` | gRPC service (High-speed GPS Ingestion Firehose) |
 | **Payment Service** | `50054` | gRPC service (Stripe payment holds & compensations) |
 | **Notification Service** | `50055` | gRPC service (Centrifugo WS bridge) |

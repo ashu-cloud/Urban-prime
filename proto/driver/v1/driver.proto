@@ -23,10 +23,15 @@ message Driver {
   string driver_id = 1;
   string name = 2;
   string phone = 3;
-  DriverStatus status = 4;
-  VehicleType vehicle_type = 5;
-  string vehicle_plate = 6;
-  double rating = 7;
+  string email = 4;
+  DriverStatus status = 5;
+  VehicleType vehicle_type = 6;
+  string vehicle_plate = 7;
+  string vehicle_model = 8;
+  double rating = 9;
+  int32 total_trips = 10;
+  int64 created_at = 11;
+  int64 updated_at = 12;
 }
 
 message MatchDriverRequest {
@@ -45,6 +50,8 @@ message MatchDriverResponse {
 message UpdateDriverStatusRequest {
   string driver_id = 1;
   DriverStatus status = 2;
+  double latitude = 3;
+  double longitude = 4;
 }
 
 message UpdateDriverStatusResponse {
@@ -52,7 +59,30 @@ message UpdateDriverStatusResponse {
   Driver driver = 2;
 }
 
+message RegisterDriverRequest {
+  string name = 1;
+  string phone = 2;
+  string email = 3;
+  string vehicle_type = 4;
+  string vehicle_plate = 5;
+  string vehicle_model = 6;
+}
+
+message RegisterDriverResponse {
+  Driver driver = 1;
+}
+
+message GetDriverRequest {
+  string driver_id = 1;
+}
+
+message GetDriverResponse {
+  Driver driver = 1;
+}
+
 service DriverService {
   rpc MatchDriver(MatchDriverRequest) returns (MatchDriverResponse);
   rpc UpdateDriverStatus(UpdateDriverStatusRequest) returns (UpdateDriverStatusResponse);
+  rpc RegisterDriver(RegisterDriverRequest) returns (RegisterDriverResponse);
+  rpc GetDriver(GetDriverRequest) returns (GetDriverResponse);
 }
