@@ -1,0 +1,10 @@
+go 1.22.0
+
+use (
+	./Services/driver-service
+	./Services/location-service
+	./Services/notification-service
+	./Services/payment-service
+	./Services/trip-service
+	./pkg
+)

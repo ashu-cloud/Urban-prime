@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package driver.v1;
+
+option go_package = "github.com/cab-booking/proto/gen/driver/v1;driverv1";
+
+enum DriverStatus {
+  DRIVER_STATUS_UNSPECIFIED = 0;
+  DRIVER_STATUS_OFFLINE = 1;
+  DRIVER_STATUS_AVAILABLE = 2;
+  DRIVER_STATUS_ON_TRIP = 3;
+}
+
+enum VehicleType {
+  VEHICLE_TYPE_UNSPECIFIED = 0;
+  VEHICLE_TYPE_SEDAN = 1;
+  VEHICLE_TYPE_SUV = 2;
+  VEHICLE_TYPE_PREMIUM = 3;
+  VEHICLE_TYPE_BIKE = 4;
+}
+
+message Driver {
+  string driver_id = 1;
+  string name = 2;
+  string phone = 3;
+  DriverStatus status = 4;
+  VehicleType vehicle_type = 5;
+  string vehicle_plate = 6;
+  double rating = 7;
+}
+
+message MatchDriverRequest {
+  string trip_id = 1;
+  double pickup_latitude = 2;
+  double pickup_longitude = 3;
+  string vehicle_type = 4;
+}
+
+message MatchDriverResponse {
+  bool matched = 1;
+  string driver_id = 2;
+  Driver driver = 3;
+}
+
+message UpdateDriverStatusRequest {
+  string driver_id = 1;
+  DriverStatus status = 2;
+}
+
+message UpdateDriverStatusResponse {
+  bool success = 1;
+  Driver driver = 2;
+}
+
+service DriverService {
+  rpc MatchDriver(MatchDriverRequest) returns (MatchDriverResponse);
+  rpc UpdateDriverStatus(UpdateDriverStatusRequest) returns (UpdateDriverStatusResponse);
+}

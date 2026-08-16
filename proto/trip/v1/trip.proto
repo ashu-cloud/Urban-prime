@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package trip.v1;
+
+option go_package = "github.com/cab-booking/proto/gen/trip/v1;tripv1";
+
+enum TripStatus {
+  TRIP_STATUS_UNSPECIFIED = 0;
+  TRIP_STATUS_REQUESTED = 1;
+  TRIP_STATUS_MATCHING = 2;
+  TRIP_STATUS_ASSIGNED = 3;
+  TRIP_STATUS_IN_PROGRESS = 4;
+  TRIP_STATUS_COMPLETED = 5;
+  TRIP_STATUS_CANCELLED = 6;
+  TRIP_STATUS_PAYMENT_FAILED = 7;
+}
+
+message Location {
+  double latitude = 1;
+  double longitude = 2;
+  string address = 3;
+}
+
+message Money {
+  string currency = 1;
+  int64 amount_cents = 2;
+}
+
+message Trip {
+  string trip_id = 1;
+  string rider_id = 2;
+  string driver_id = 3;
+  Location pickup_location = 4;
+  Location dropoff_location = 5;
+  TripStatus status = 6;
+  Money estimated_fare = 7;
+  Money final_fare = 8;
+  double distance_km = 9;
+  int64 estimated_duration_seconds = 10;
+  int64 created_at = 11;
+  int64 updated_at = 12;
+}
+
+message CreateTripRequest {
+  string rider_id = 1;
+  Location pickup_location = 2;
+  Location dropoff_location = 3;
+  string vehicle_type = 4;
+  string payment_method_id = 5;
+}
+
+message CreateTripResponse {
+  Trip trip = 1;
+}
+
+message GetTripRequest {
+  string trip_id = 1;
+}
+
+message GetTripResponse {
+  Trip trip = 1;
+}
+
+message CancelTripRequest {
+  string trip_id = 1;
+  string reason = 2;
+}
+
+message CancelTripResponse {
+  bool success = 1;
+  Trip trip = 2;
+}
+
+service TripService {
+  rpc CreateTrip(CreateTripRequest) returns (CreateTripResponse);
+  rpc GetTrip(GetTripRequest) returns (GetTripResponse);
+  rpc CancelTrip(CancelTripRequest) returns (CancelTripResponse);
+}

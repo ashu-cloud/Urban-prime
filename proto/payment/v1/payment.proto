@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package payment.v1;
+
+option go_package = "github.com/cab-booking/proto/gen/payment/v1;paymentv1";
+
+message AuthorizeHoldRequest {
+  string trip_id = 1;
+  string rider_id = 2;
+  int64 amount_cents = 3;
+  string currency = 4;
+  string payment_method_id = 5;
+}
+
+message AuthorizeHoldResponse {
+  bool success = 1;
+  string transaction_id = 2;
+  string error_message = 3;
+}
+
+message ReleaseHoldRequest {
+  string transaction_id = 1;
+  string trip_id = 2;
+  string reason = 3;
+}
+
+message ReleaseHoldResponse {
+  bool success = 1;
+}
+
+message CapturePaymentRequest {
+  string transaction_id = 1;
+  string trip_id = 2;
+  int64 final_amount_cents = 3;
+}
+
+message CapturePaymentResponse {
+  bool success = 1;
+  string receipt_url = 2;
+}
+
+service PaymentService {
+  rpc AuthorizeHold(AuthorizeHoldRequest) returns (AuthorizeHoldResponse);
+  rpc ReleaseHold(ReleaseHoldRequest) returns (ReleaseHoldResponse);
+  rpc CapturePayment(CapturePaymentRequest) returns (CapturePaymentResponse);
+}

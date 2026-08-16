@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Datastore
+  postgres:
+    image: postgres:16-alpine
+    container_name: cab_postgres
+    environment:
+      POSTGRES_USER: cab_user
+      POSTGRES_PASSWORD: cab_password
+      POSTGRES_DB: cab_booking_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cab_user -d cab_booking_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Geo & Cache
+  redis:
+    image: redis:7-alpine
+    container_name: cab_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Apache Kafka Event Streaming Bus
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: cab_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: cab_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  # Centrifugo Real-time WebSockets
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    container_name: cab_centrifugo
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./centrifugo/config.json:/centrifugo/config.json
+    command: centrifugo --config=/centrifugo/config.json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # APISIX etcd
+  etcd:
+    image: bitnami/etcd:3.5
+    container_name: cab_etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ENABLE_V2=true
+    ports:
+      - "2379:2379"
+
+  # Apache APISIX Gateway
+  apisix:
+    image: apache/apisix:3.8.0-debian
+    container_name: cab_apisix
+    depends_on:
+      - etcd
+    ports:
+      - "9080:9080"
+      - "9090:9090"
+    volumes:
+      - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml
+
+  # Jaeger OpenTelemetry Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: cab_jaeger
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+
+volumes:
+  postgres_data:
+  redis_data:
