@@ -7,4 +7,5 @@ use (
 	./Services/payment-service
 	./Services/trip-service
 	./pkg
+	./proto
 )
