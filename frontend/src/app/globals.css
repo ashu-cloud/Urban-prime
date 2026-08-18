@@ -1,0 +1,93 @@
+@import "tailwindcss";
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+:root {
+  --primary: #276EF1;
+  --primary-hover: #1A54C9;
+  --primary-container: #E7F0FF;
+  --surface: #FCF9F8;
+  --surface-card: #FFFFFF;
+  --surface-dim: #DCD9D9;
+  --text-on-surface: #1F1F1F;
+  --text-muted: #6B7280;
+  --success: #008A5E;
+  --success-container: #E6F4EA;
+  --danger: #E11900;
+  --danger-container: #FCE8E6;
+  --radius-card: 16px;
+}
+
+@theme {
+  --color-primary: #276EF1;
+  --color-primary-hover: #1A54C9;
+  --color-primary-container: #E7F0FF;
+  --color-surface: #FCF9F8;
+  --color-surface-card: #FFFFFF;
+  --color-surface-dim: #DCD9D9;
+  --color-text-on-surface: #1F1F1F;
+  --color-text-muted: #6B7280;
+  --color-success: #008A5E;
+  --color-success-container: #E6F4EA;
+  --color-danger: #E11900;
+  --color-danger-container: #FCE8E6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--surface);
+  color: var(--text-on-surface);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #DCD9D9;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* Mapbox canvas custom resets */
+.mapboxgl-map {
+  font-family: inherit;
+}
+
+.mapboxgl-ctrl-bottom-right,
+.mapboxgl-ctrl-bottom-left {
+  z-index: 10;
+}
+
+/* Pulse animation for live driver / radar */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
