@@ -62,8 +62,15 @@ func main() {
 		defer producer.Close()
 	}
 
+	paymentClient, err := payment.NewClient(cfg.PaymentServiceAddr)
+	if err != nil {
+		logger.Warn(ctx, "Failed to connect to payment service", "error", err)
+	} else {
+		defer paymentClient.Close()
+	}
+
 	// 3. SAGA ORCHESTRATOR
-	orchestrator := saga.NewOrchestrator(repo, osrmClient, calculator, producer)
+	orchestrator := saga.NewOrchestrator(repo, osrmClient, calculator, producer, paymentClient)
 
 	// 4. KAFKA CONSUMER (Listens for `driver.match.v1 { ACCEPTED / EXHAUSTED }` to update trip status)
 	consumer, err := kafka.NewConsumer(

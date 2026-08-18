@@ -11,14 +11,16 @@ import (
 	"github.com/cab-booking/trip-service/internal/osrm"
 	"github.com/cab-booking/trip-service/internal/pricing"
 	"github.com/cab-booking/trip-service/internal/repository"
+	"github.com/cab-booking/trip-service/internal/payment"
 	"github.com/google/uuid"
 )
 
 type Orchestrator struct {
-	repo       *repository.TripRepository
-	osrmClient *osrm.Client
-	calculator *pricing.Calculator
-	producer   *kafka.Producer
+	repo          *repository.TripRepository
+	osrmClient    *osrm.Client
+	calculator    *pricing.Calculator
+	producer      *kafka.Producer
+	paymentClient *payment.Client
 }
 
 func NewOrchestrator(
@@ -26,12 +28,14 @@ func NewOrchestrator(
 	osrmClient *osrm.Client,
 	calculator *pricing.Calculator,
 	producer *kafka.Producer,
+	paymentClient *payment.Client,
 ) *Orchestrator {
 	return &Orchestrator{
-		repo:       repo,
-		osrmClient: osrmClient,
-		calculator: calculator,
-		producer:   producer,
+		repo:          repo,
+		osrmClient:    osrmClient,
+		calculator:    calculator,
+		producer:      producer,
+		paymentClient: paymentClient,
 	}
 }
 
@@ -57,6 +61,13 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 
 	breakdown := s.calculator.CalculateFare(route.DistanceKm, route.DurationSecs, 1.0)
 
+	logger.Info(ctx, "Saga Step 2: Authorizing Payment Hold", "trip_id", tripID, "amount_inr", float64(breakdown.TotalFareCents)/100.0)
+	transactionID, err := s.paymentClient.AuthorizeHold(ctx, tripID, cmd.RiderID, breakdown.TotalFareCents, "INR", cmd.PaymentMethodID)
+	if err != nil {
+		logger.Error(ctx, "Saga Step 2 Failed: Payment authorization declined", "error", err)
+		return nil, fmt.Errorf("payment authorization failed: %w", err)
+	}
+
 	trip := &domain.Trip{
 		ID:              tripID,
 		RiderID:         cmd.RiderID,
@@ -78,6 +89,12 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 				Details:   fmt.Sprintf("Route calculated: %.2f km, fare: ₹%.2f", route.DistanceKm, float64(breakdown.TotalFareCents)/100.0),
 				Timestamp: now,
 			},
+			{
+				StepName:  "PAYMENT_HOLD_AUTHORIZED",
+				Status:    "SUCCESS",
+				Details:   fmt.Sprintf("Payment authorized with transaction ID: %s", transactionID),
+				Timestamp: time.Now(),
+			},
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -85,6 +102,8 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 
 	if err := s.repo.Create(ctx, trip); err != nil {
 		logger.Error(ctx, "Failed to persist trip to DB", "error", err)
+		// Compensate by releasing hold
+		_ = s.paymentClient.ReleaseHold(ctx, transactionID, tripID, "failed to persist trip to db")
 		return nil, err
 	}
 
@@ -165,6 +184,11 @@ func (s *Orchestrator) CompensateNoDriverAvailable(ctx context.Context, tripID s
 
 	_ = s.repo.UpdateStatus(ctx, tripID, domain.StatusCancelledNoDriver, step)
 
+	// Release Payment Hold
+	if err := s.paymentClient.ReleaseHold(ctx, "", tripID, "no driver available"); err != nil {
+		logger.Error(ctx, "Failed to release payment hold during compensation", "trip_id", tripID, "error", err)
+	}
+
 	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
 		TripID:    tripID,
 		Status:    string(domain.StatusCancelledNoDriver),
@@ -183,6 +207,11 @@ func (s *Orchestrator) CompensateTripCreation(ctx context.Context, tripID string
 	}
 
 	_ = s.repo.UpdateStatus(ctx, tripID, domain.StatusCancelled, compStep)
+
+	// Release Payment Hold
+	if err := s.paymentClient.ReleaseHold(ctx, "", tripID, reason); err != nil {
+		logger.Error(ctx, "Failed to release payment hold during compensation", "trip_id", tripID, "error", err)
+	}
 
 	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
 		TripID:    tripID,

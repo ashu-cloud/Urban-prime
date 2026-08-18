@@ -10,6 +10,13 @@ help:
 	@echo "  make tidy       - Run go mod tidy across all modules"
 	@echo "  make build      - Build all Go microservices"
 
+proto-gen:
+	protoc --go_out=proto/gen --go_opt=paths=source_relative \
+	       --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
+	       -I=proto proto/auth/v1/auth.proto proto/trip/v1/trip.proto \
+	       proto/driver/v1/driver.proto proto/location/v1/location.proto \
+	       proto/payment/v1/payment.proto
+
 dev-up:
 	docker-compose -f deploy/docker-compose.yml up -d
 
