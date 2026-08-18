@@ -5,6 +5,12 @@ import { Centrifuge } from 'centrifuge';
 
 const CENTRIFUGO_URL = process.env.NEXT_PUBLIC_CENTRIFUGO_WS || 'ws://localhost:8000/connection/websocket';
 
+export interface LocationPoint {
+  lat: number;
+  lng: number;
+  address?: string;
+}
+
 export interface DriverLocationEvent {
   driverId: string;
   latitude: number;
@@ -27,11 +33,21 @@ export interface DispatchOfferEvent {
   dropoffLng: number;
   fareAmount: number;
   expiresInSeconds: number;
+  otp: string;
 }
+
+export type TripLifecycleStage = 
+  | 'MATCHING' 
+  | 'ACCEPTED_EN_ROUTE_PICKUP' 
+  | 'ARRIVED_AT_PICKUP' 
+  | 'IN_TRANSIT' 
+  | 'ARRIVED_AT_DESTINATION' 
+  | 'COMPLETED' 
+  | 'CANCELLED';
 
 export interface TripStatusEvent {
   tripId: string;
-  status: 'MATCHING' | 'ACCEPTED' | 'DRIVER_ARRIVING' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
+  status: TripLifecycleStage;
   driverId?: string;
   driverName?: string;
   driverRating?: number;
@@ -40,9 +56,34 @@ export interface TripStatusEvent {
   driverLat?: number;
   driverLng?: number;
   etaMinutes?: number;
+  distanceMeters?: number;
+  otp?: string;
+  pickupCoords?: LocationPoint;
+  dropoffCoords?: LocationPoint;
+  fareAmount?: number;
+  rating?: number;
+  tipAmount?: number;
 }
 
 type EventCallback<T> = (data: T) => void;
+
+/**
+ * Haversine formula to compute geodesic distance in meters between two lat/lng coordinates.
+ */
+export function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
+}
 
 class RealtimeBus {
   private centrifuge: Centrifuge | null = null;
@@ -63,7 +104,7 @@ class RealtimeBus {
   private initCentrifugo() {
     try {
       this.centrifuge = new Centrifuge(CENTRIFUGO_URL, {
-        token: '', // Development mode allows anonymous or custom token
+        token: '',
       });
 
       this.centrifuge.on('connected', () => {
@@ -77,25 +118,23 @@ class RealtimeBus {
 
       this.centrifuge.connect();
     } catch {
-      // Fallback
+      // Fallback to local mesh
     }
   }
 
   // Publish Driver GPS Position
   public publishDriverLocation(data: DriverLocationEvent) {
-    // 1. BroadcastChannel for local cross-tab instant sync
     this.broadcastChannel?.postMessage({
       type: 'DRIVER_LOCATION',
       payload: data,
     });
 
-    // 2. Centrifugo publication if connected
     if (this.isConnected && this.centrifuge) {
       try {
         const sub = this.centrifuge.newSubscription('driver.location.v1');
         sub.publish(data);
       } catch {
-        // Ignore if channel not configured
+        // Ignore
       }
     }
   }
@@ -108,7 +147,7 @@ class RealtimeBus {
     });
   }
 
-  // Publish Trip Status Transition (Accepted, Arriving, Completed)
+  // Publish Trip Status Transition (Accepted, Arriving, Verified In-Transit, Completed)
   public publishTripStatus(data: TripStatusEvent) {
     this.broadcastChannel?.postMessage({
       type: 'TRIP_STATUS',
@@ -135,7 +174,7 @@ class RealtimeBus {
         });
         sub.subscribe();
       } catch {
-        // Fallback to BroadcastChannel
+        // Fallback
       }
     }
 
@@ -160,7 +199,7 @@ class RealtimeBus {
     };
   }
 
-  // Subscribe to Trip Status Updates (Rider Screen)
+  // Subscribe to Trip Status Updates (Rider & Driver Screens)
   public onTripStatus(tripId: string, callback: EventCallback<TripStatusEvent>): () => void {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'TRIP_STATUS' && (!tripId || event.data.payload.tripId === tripId)) {

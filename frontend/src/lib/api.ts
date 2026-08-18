@@ -3,6 +3,8 @@
  * Includes graceful mock fallbacks for standalone UI testing and simulation.
  */
 
+import { TripLifecycleStage } from './socket';
+
 const APISIX_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9080';
 
 export interface UserSession {
@@ -28,13 +30,20 @@ export interface TripRequest {
 
 export interface TripResponse {
   tripId: string;
-  status: 'PENDING' | 'MATCHING' | 'ACCEPTED' | 'DRIVER_ARRIVING' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
-  fare: number;
+  riderId?: string;
+  status: TripLifecycleStage | 'PENDING' | 'ACCEPTED' | 'DRIVER_ARRIVING';
+  fare?: number;
+  fareAmount?: number;
+  currency?: string;
   driverId?: string;
   vehicleModel?: string;
   driverName?: string;
   driverRating?: number;
   estimatedMinutes?: number;
+  pickupLocation?: { latitude: number; longitude: number; address: string };
+  dropoffLocation?: { latitude: number; longitude: number; address: string };
+  vehicleType?: string;
+  createdAt?: string;
 }
 
 // Session Storage Helpers
@@ -62,112 +71,82 @@ export const clearStoredSession = () => {
 
 // API Methods
 export const api = {
-  // Authentication
-  login: async (email: string, role: 'RIDER' | 'DRIVER' = 'RIDER'): Promise<UserSession> => {
+  // 1. Auth Service via APISIX (/api/v1/auth/login)
+  async login(email: string, role: 'RIDER' | 'DRIVER'): Promise<UserSession> {
     try {
-      const res = await fetch(`${APISIX_BASE_URL}/auth/login`, {
+      const res = await fetch(`${APISIX_BASE_URL}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: 'password123', role }),
+        body: JSON.stringify({ email, role }),
       });
+
       if (res.ok) {
         const data = await res.json();
         const session: UserSession = {
-          userId: data.user_id || `usr_${Math.random().toString(36).substring(2, 8)}`,
+          userId: data.userId || (role === 'DRIVER' ? 'drv_901' : 'rid_001'),
           email,
           role,
           token: data.token || 'mock_jwt_token',
-          name: email.split('@')[0].replace('.', ' ').toUpperCase(),
+          name: data.name || (role === 'DRIVER' ? 'Marcus Sterling' : 'Alexander Vance'),
         };
         setStoredSession(session);
         return session;
       }
     } catch {
-      // Fallback mock session if APISIX is not reachable
+      // Mock Fallback
     }
 
-    // Mock fallback
-    const session: UserSession = {
-      userId: role === 'RIDER' ? 'rid_001' : 'drv_901',
+    const fallbackSession: UserSession = {
+      userId: role === 'DRIVER' ? 'drv_901' : 'rid_001',
       email,
       role,
-      token: 'jwt_mock_token_demo',
-      name: role === 'RIDER' ? 'Alexander Vance' : 'Marcus Sterling',
+      token: 'jwt_mock_token_123',
+      name: role === 'DRIVER' ? 'Marcus Sterling' : 'Alexander Vance',
     };
-    setStoredSession(session);
-    return session;
+    setStoredSession(fallbackSession);
+    return fallbackSession;
   },
 
-  // Create Trip (Rider -> Saga Orchestrator)
-  createTrip: async (payload: TripRequest): Promise<TripResponse> => {
-    const session = getStoredSession();
+  // 2. Trip Service via APISIX (/api/v1/trips)
+  async createTrip(req: TripRequest): Promise<TripResponse> {
     try {
-      const res = await fetch(`${APISIX_BASE_URL}/v1/trips`, {
+      const res = await fetch(`${APISIX_BASE_URL}/api/v1/trips`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.token || ''}`,
-        },
-        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
       });
+
       if (res.ok) {
         return await res.json();
       }
     } catch {
-      // Fallback
+      // Mock Fallback
     }
 
-    // Return realistic trip simulation response
     return {
-      tripId: `trip_${Math.random().toString(36).substring(2, 9)}`,
+      tripId: `trip_${Date.now()}`,
+      riderId: req.riderId,
       status: 'MATCHING',
-      fare: payload.fareAmount,
-      estimatedMinutes: 4,
+      fare: req.fareAmount,
+      fareAmount: req.fareAmount,
+      currency: 'USD',
+      pickupLocation: { latitude: req.pickupLat, longitude: req.pickupLng, address: req.pickupAddress },
+      dropoffLocation: { latitude: req.dropoffLat, longitude: req.dropoffLng, address: req.dropoffAddress },
+      vehicleType: req.vehicleType,
+      createdAt: new Date().toISOString(),
     };
   },
 
-  // Driver Location Update (Driver GPS Firehose)
-  updateDriverLocation: async (driverId: string, lat: number, lng: number, heading: number, isAvailable: boolean) => {
-    const session = getStoredSession();
+  // 3. Driver Location Telemetry (/api/v1/location/driver)
+  async updateLocation(driverId: string, lat: number, lng: number, heading: number) {
     try {
-      await fetch(`${APISIX_BASE_URL}/v1/location/update`, {
+      await fetch(`${APISIX_BASE_URL}/api/v1/location/driver`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.token || ''}`,
-        },
-        body: JSON.stringify({
-          driver_id: driverId,
-          latitude: lat,
-          longitude: lng,
-          heading,
-          is_available: isAvailable,
-          timestamp: new Date().toISOString(),
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverId, latitude: lat, longitude: lng, heading }),
       });
     } catch {
-      // Non-blocking location update
-    }
-  },
-
-  // Driver Accept/Decline Dispatch
-  respondToDispatch: async (tripId: string, driverId: string, accepted: boolean) => {
-    const session = getStoredSession();
-    try {
-      await fetch(`${APISIX_BASE_URL}/v1/drivers/dispatch/respond`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.token || ''}`,
-        },
-        body: JSON.stringify({
-          trip_id: tripId,
-          driver_id: driverId,
-          action: accepted ? 'ACCEPT' : 'DECLINE',
-        }),
-      });
-    } catch {
-      // Non-blocking
+      // Offline fallback
     }
   },
 };

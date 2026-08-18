@@ -62,9 +62,13 @@ body {
   background: #9CA3AF;
 }
 
-/* Mapbox canvas custom resets */
-.mapboxgl-map {
-  font-family: inherit;
+/* Hide native black cursor when in pin picking mode so FontAwesome location-dot takes over */
+.pin-picking-active,
+.pin-picking-active *,
+.pin-picking-active canvas,
+.pin-picking-active .mapboxgl-canvas-container,
+.pin-picking-active .mapboxgl-canvas {
+  cursor: none !important;
 }
 
 .mapboxgl-ctrl-bottom-right,
