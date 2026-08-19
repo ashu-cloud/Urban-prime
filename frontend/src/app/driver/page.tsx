@@ -837,7 +837,7 @@ export default function DriverPage() {
               type="button"
               onClick={() => {
                 clearStoredDriverSession();
-                router.push('/driver/login');
+                router.push('/');
               }}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors text-left cursor-pointer"
             >

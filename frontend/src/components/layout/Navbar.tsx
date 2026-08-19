@@ -18,7 +18,7 @@ export default function Navbar({ activeTab = 'ride', onOpenActivity, onOpenHelp 
 
   const handleLogout = () => {
     clearStoredRiderSession();
-    router.push('/rider/login');
+    router.push('/');
   };
 
   return (
