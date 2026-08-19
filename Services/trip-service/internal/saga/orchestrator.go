@@ -59,6 +59,12 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 		return nil, fmt.Errorf("failed to calculate trip route: %w", err)
 	}
 
+	const maxTripDistanceKm = 100.0
+	if route.DistanceKm > maxTripDistanceKm {
+		logger.Warn(ctx, "Trip rejected: exceeds max distance", "distance_km", route.DistanceKm, "max_km", maxTripDistanceKm)
+		return nil, fmt.Errorf("trip distance (%.2f km) exceeds maximum allowed limit of %.0f km", route.DistanceKm, maxTripDistanceKm)
+	}
+
 	breakdown := s.calculator.CalculateFare(route.DistanceKm, route.DurationSecs, 1.0)
 
 	logger.Info(ctx, "Saga Step 2: Authorizing Payment Hold", "trip_id", tripID, "amount_inr", float64(breakdown.TotalFareCents)/100.0)

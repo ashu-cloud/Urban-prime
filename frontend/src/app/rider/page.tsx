@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/Navbar';
 import MapboxView, { MarkerLocation, RouteLegType } from '@/components/map/MapboxView';
-import { api, getStoredSession, TripResponse } from '@/lib/api';
+import { api, getStoredRiderSession, TripResponse } from '@/lib/api';
 import { fetchMapboxDirections } from '@/lib/directions';
 import { tripStore, PersistedTripState } from '@/lib/tripStore';
 import {
@@ -13,6 +14,7 @@ import {
   TripLifecycleStage,
   getDistanceInMeters,
 } from '@/lib/socket';
+import { calculatePlatformFee } from '@/lib/fare';
 import {
   Navigation,
   Car,
@@ -28,7 +30,14 @@ import {
   Award,
   Crosshair,
   Route,
+  Receipt,
+  CheckCircle2,
+  ThumbsUp,
+  AlertTriangle,
+  Compass,
 } from 'lucide-react';
+
+const MAX_TRIP_DISTANCE_KM = 100;
 
 interface VehicleTier {
   id: 'SEDAN' | 'SUV' | 'PREMIUM' | 'BIKE';
@@ -81,11 +90,79 @@ const VEHICLE_TIERS: VehicleTier[] = [
   },
 ];
 
+interface SubmittedFeedback {
+  rating: number;
+  tip: number;
+  compliments: string[];
+  totalFare: number;
+  driverName: string;
+  vehicleModel: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  tripId: string;
+}
+
+export interface RiderActivityItem {
+  id: string;
+  tripId: string;
+  date: string;
+  timestamp: number;
+  pickupAddress: string;
+  dropoffAddress: string;
+  vehicleType: string;
+  vehicleModel: string;
+  driverName: string;
+  rating: number;
+  tip: number;
+  fareAmount: number;
+  totalFare: number;
+  compliments: string[];
+  status: 'COMPLETED';
+}
+
 export default function RiderPage() {
-  const session = getStoredSession();
+  const router = useRouter();
+  const [session, setSession] = useState<any>(null);
   const [pickupAddress, setPickupAddress] = useState('Empire State Building, NYC');
   const [dropoffAddress, setDropoffAddress] = useState('Grand Central Terminal, NYC');
   const [selectedTier, setSelectedTier] = useState<VehicleTier['id']>('PREMIUM');
+  const [activityHistory, setActivityHistory] = useState<RiderActivityItem[]>([]);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+
+  // Hydrate active rider session & restore any pending ride configuration
+  useEffect(() => {
+    const currentSession = getStoredRiderSession();
+    if (currentSession && currentSession.role === 'RIDER') {
+      setSession(currentSession);
+    }
+
+    try {
+      const savedPending = localStorage.getItem('urban_pending_ride');
+      if (savedPending) {
+        const data = JSON.parse(savedPending);
+        if (data.pickupAddress) setPickupAddress(data.pickupAddress);
+        if (data.dropoffAddress) setDropoffAddress(data.dropoffAddress);
+        if (data.pickupCoords) setPickupCoords(data.pickupCoords);
+        if (data.dropoffCoords) setDropoffCoords(data.dropoffCoords);
+        if (data.selectedTier) setSelectedTier(data.selectedTier);
+        if (data.drivingDistanceKm) setDrivingDistanceKm(data.drivingDistanceKm);
+        if (data.drivingDurationText) setDrivingDurationText(data.drivingDurationText);
+      }
+    } catch (e) {
+      console.error('Error hydrating pending ride:', e);
+    }
+
+    // Hydrate Activity History
+    try {
+      const userKey = currentSession?.userId || 'rid_001';
+      const existingRaw = localStorage.getItem(`urban_rider_history_${userKey}`);
+      if (existingRaw) {
+        setActivityHistory(JSON.parse(existingRaw));
+      }
+    } catch (e) {
+      console.error('Failed to load activity history:', e);
+    }
+  }, []);
 
   // Interactive Pin Picking Mode: 'PICKUP' | 'DROPOFF' | null
   const [activePinMode, setActivePinMode] = useState<'PICKUP' | 'DROPOFF' | null>(null);
@@ -126,11 +203,12 @@ export default function RiderPage() {
   const [assignedDriver, setAssignedDriver] = useState<TripStatusEvent | null>(null);
   const [searchSeconds, setSearchSeconds] = useState(0);
 
-  // Rating & Review Modal State
+  // Rating & Review State
   const [rating, setRating] = useState(5);
   const [selectedTip, setSelectedTip] = useState<number | null>(5);
   const [selectedCompliments, setSelectedCompliments] = useState<string[]>(['Smooth Driving', 'Luxury Vehicle']);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [submittedFeedback, setSubmittedFeedback] = useState<SubmittedFeedback | null>(null);
 
   // 1. HYDRATE SINGLE SOURCE OF TRUTH ON MOUNT (SURVIVES REFRESH)
   useEffect(() => {
@@ -172,12 +250,12 @@ export default function RiderPage() {
           tripId: saved.tripId,
           status: saved.status,
           driverId: saved.driverId,
-          driverName: saved.driverName || 'Marcus Sterling',
+          driverName: saved.driverName || 'Chauffeur Partner',
           driverLat: dLat,
           driverLng: dLng,
-          driverRating: saved.driverRating || 4.98,
-          vehicleModel: saved.vehicleModel || 'Tesla Model S (Obsidian Black)',
-          licensePlate: saved.licensePlate || 'NY-7890',
+          driverRating: saved.driverRating || 5.0,
+          vehicleModel: saved.vehicleModel || 'Executive Fleet Vehicle',
+          licensePlate: saved.licensePlate || 'NYC-PRIME',
           otp: saved.otp,
         };
         setAssignedDriver(dObj);
@@ -187,7 +265,9 @@ export default function RiderPage() {
             lat: dLat,
             lng: dLng,
             heading: saved.driverHeading || 45,
-            label: saved.driverName || 'Marcus Sterling (Tesla Model S)',
+            label: saved.driverName
+              ? `${saved.driverName} (${saved.vehicleModel || 'Fleet Vehicle'})`
+              : 'Chauffeur Partner',
           },
           ...prev.filter((d) => d.id !== saved.driverId),
         ]);
@@ -355,6 +435,31 @@ export default function RiderPage() {
 
   // Request Trip Trigger
   const handleRequestRide = async () => {
+    if (drivingDistanceKm > MAX_TRIP_DISTANCE_KM) {
+      alert(`Trip distance (${drivingDistanceKm} km) exceeds the maximum allowed limit of ${MAX_TRIP_DISTANCE_KM} km.`);
+      return;
+    }
+
+    const currentSession = getStoredRiderSession();
+    if (!currentSession || currentSession.role !== 'RIDER') {
+      // Persist the entire ride selection so rider loses nothing upon login/signup
+      const pendingRide = {
+        pickupAddress,
+        dropoffAddress,
+        pickupCoords,
+        dropoffCoords,
+        selectedTier,
+        drivingDistanceKm,
+        drivingDurationText,
+      };
+      localStorage.setItem('urban_pending_ride', JSON.stringify(pendingRide));
+      router.push('/rider/login');
+      return;
+    }
+
+    // Clear saved pending ride once authenticated booking commences
+    localStorage.removeItem('urban_pending_ride');
+
     const activeTier = VEHICLE_TIERS.find((t) => t.id === selectedTier) || VEHICLE_TIERS[0];
     const finalFare = getTierPrice(activeTier);
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -362,14 +467,16 @@ export default function RiderPage() {
     setIsIdle(false);
     setTripState('MATCHING');
     setActivePinMode(null);
+    setSubmittedFeedback(null);
 
     const newTripId = `trip_${Date.now()}`;
 
     // 1. SAVE PERSISTENT SINGLE SOURCE OF TRUTH
+    const feeBreakdown = calculatePlatformFee(finalFare);
     const initialTripState: PersistedTripState = {
       tripId: newTripId,
-      riderId: session?.userId || 'rid_001',
-      riderName: session?.name || 'Alexander Vance',
+      riderId: currentSession.userId || 'rid_001',
+      riderName: currentSession.name || 'Alexander Vance',
       status: 'MATCHING',
       pickupAddress,
       pickupLat: pickupCoords.lat,
@@ -379,6 +486,9 @@ export default function RiderPage() {
       dropoffLng: dropoffCoords.lng,
       vehicleType: selectedTier,
       fareAmount: finalFare,
+      platformFee: feeBreakdown.platformFee,
+      driverNetFare: feeBreakdown.driverNetFare,
+      feePercentage: feeBreakdown.feePercentage,
       otp: otp,
       createdAt: Date.now(),
     };
@@ -411,7 +521,7 @@ export default function RiderPage() {
       });
     }
 
-    // Broadcast dispatch offer over real-time bus
+    // Broadcast dispatch offer over real-time bus with platform fee breakdown
     realtimeBus.publishDispatchOffer({
       tripId: newTripId,
       riderId: session?.userId || 'rid_001',
@@ -423,25 +533,113 @@ export default function RiderPage() {
       dropoffLat: dropoffCoords.lat,
       dropoffLng: dropoffCoords.lng,
       fareAmount: finalFare,
+      platformFee: feeBreakdown.platformFee,
+      driverNetFare: feeBreakdown.driverNetFare,
+      feePercentage: feeBreakdown.feePercentage,
       expiresInSeconds: 15,
       otp: otp,
     });
   };
 
-  const handleCancelTrip = () => {
+  const handleResetToBooking = () => {
     setIsIdle(true);
     setTripState('MATCHING');
     setCurrentTrip(null);
     setAssignedDriver(null);
     setShowRatingModal(false);
     setActivePinMode(null);
+    setSubmittedFeedback(null);
     tripStore.clear();
+    setPickupAddress('Empire State Building, NYC');
+    setDropoffAddress('Grand Central Terminal, NYC');
+    setPickupCoords({
+      lat: 40.7484,
+      lng: -73.9857,
+      label: 'Pickup: Empire State',
+      type: 'pickup',
+    });
+    setDropoffCoords({
+      lat: 40.7527,
+      lng: -73.9772,
+      label: 'Dropoff: Grand Central',
+      type: 'dropoff',
+    });
   };
 
+  const handleCancelTrip = () => {
+    handleResetToBooking();
+  };
+
+  // Submit Feedback & Display Full Summary Card on the Rider App
   const handleSubmitRating = () => {
-    alert(`Thank you for rating your chauffeur ${rating}★! Tip: $${selectedTip || 0}`);
+    const tipAmount = selectedTip || 0;
+    const baseFare = currentTrip?.fareAmount || currentFare;
+    const totalAmount = Number((baseFare + tipAmount).toFixed(2));
+
+    const completedSummary: SubmittedFeedback = {
+      rating,
+      tip: tipAmount,
+      compliments: selectedCompliments,
+      totalFare: totalAmount,
+      driverName: assignedDriver?.driverName || 'Marcus Sterling',
+      vehicleModel: assignedDriver?.vehicleModel || 'Tesla Model S (Obsidian Black)',
+      pickupAddress,
+      dropoffAddress,
+      tripId: currentTrip?.tripId || `trip_${Date.now()}`,
+    };
+
+    setSubmittedFeedback(completedSummary);
+
+    // Record to Activity History
+    const activityItem: RiderActivityItem = {
+      id: `act_${Date.now()}`,
+      tripId: completedSummary.tripId,
+      date: new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      timestamp: Date.now(),
+      pickupAddress,
+      dropoffAddress,
+      vehicleType: selectedTier,
+      vehicleModel: completedSummary.vehicleModel,
+      driverName: completedSummary.driverName,
+      rating,
+      tip: tipAmount,
+      fareAmount: baseFare,
+      totalFare: totalAmount,
+      compliments: selectedCompliments,
+      status: 'COMPLETED',
+    };
+
+    try {
+      const userKey = session?.userId || 'rid_001';
+      const existingRaw = localStorage.getItem(`urban_rider_history_${userKey}`);
+      const existing: RiderActivityItem[] = existingRaw ? JSON.parse(existingRaw) : [];
+      const updated = [activityItem, ...existing];
+      localStorage.setItem(`urban_rider_history_${userKey}`, JSON.stringify(updated));
+      setActivityHistory(updated);
+    } catch (e) {
+      console.error('Failed to save activity history:', e);
+    }
+
+    // Real-time broadcast tip & rating to driver so driver's wallet updates instantly with 100% tip
+    realtimeBus.publishTripStatus({
+      tripId: completedSummary.tripId,
+      status: 'COMPLETED',
+      driverId: assignedDriver?.driverId || 'drv_901',
+      driverName: session?.name || 'Alexander Vance',
+      rating,
+      tipAmount,
+      fareAmount: baseFare,
+    });
+
     setShowRatingModal(false);
-    handleCancelTrip();
+    setTripState('COMPLETED');
+    tripStore.clear();
   };
 
   const toggleCompliment = (badge: string) => {
@@ -456,7 +654,7 @@ export default function RiderPage() {
   const currentFare = getTierPrice(activeTierObj);
 
   let activeLeg: RouteLegType = 'NONE';
-  if (!isIdle) {
+  if (!isIdle && !submittedFeedback) {
     if (tripState === 'ACCEPTED_EN_ROUTE_PICKUP' || tripState === 'ARRIVED_AT_PICKUP') {
       activeLeg = 'TO_PICKUP';
     } else if (tripState === 'IN_TRANSIT' || tripState === 'ARRIVED_AT_DESTINATION') {
@@ -465,24 +663,25 @@ export default function RiderPage() {
   }
 
   // When in an active ride, ONLY show the assigned chauffeur and filter out all other cars
-  const renderedDriversList = !isIdle
+  const renderedDriversList = !isIdle && !submittedFeedback
     ? (assignedDriverLocation ? [assignedDriverLocation] : [])
     : nearbyDrivers;
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#FCF9F8]">
       {/* Top Bar */}
-      <Navbar activeTab="ride" />
+      <Navbar activeTab="ride" onOpenActivity={() => setShowActivityModal(true)} />
 
       {/* Main Map-Centric Workspace */}
       <div className="relative flex-1 w-full h-[calc(100vh-72px)] overflow-hidden">
         {/* Full-Bleed Mapbox View with Real Road Routing and Auto-Vehicle Tracking */}
         <MapboxView
-          pickup={pickupCoords}
-          dropoff={dropoffCoords}
+          pickup={submittedFeedback ? null : pickupCoords}
+          dropoff={submittedFeedback ? null : dropoffCoords}
           drivers={renderedDriversList}
           activeLeg={activeLeg}
           activePinMode={activePinMode}
+          showTrackingBadge={!submittedFeedback}
           onMapClick={handleMapClick}
           onPickupDrag={handlePickupDrag}
           onDropoffDrag={handleDropoffDrag}
@@ -495,14 +694,18 @@ export default function RiderPage() {
           <div className="p-5 border-b border-[#DCD9D9] bg-[#FCF9F8]/80 flex items-center justify-between">
             <div>
               <h2 className="text-base font-extrabold text-[#1F1F1F] tracking-tight flex items-center gap-2">
-                <span>Where to next?</span>
+                <span>{submittedFeedback ? 'Trip Receipt & Rating' : 'Where to next?'}</span>
                 <span className="px-2 py-0.5 rounded-full bg-[#E7F0FF] text-[#276EF1] text-[10px] uppercase font-bold tracking-wider">
-                  Live Dispatch
+                  {submittedFeedback ? 'Completed' : 'Live Dispatch'}
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Click or drag pins on map to adjust locations</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {submittedFeedback
+                  ? 'Your rating and tip have been credited to your chauffeur'
+                  : 'Click or drag pins on map to adjust locations'}
+              </p>
             </div>
-            {!isIdle && (
+            {!isIdle && !submittedFeedback && (
               <button
                 onClick={handleCancelTrip}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
@@ -514,8 +717,110 @@ export default function RiderPage() {
           </div>
 
           <div className="p-5 overflow-y-auto space-y-5">
+            {/* 0. COMPLETED STATE: SUBMITTED RATING & TIP RECEIPT SUMMARY */}
+            {submittedFeedback && (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                {/* 5-Star Confirmed Badge */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 text-center space-y-2 shadow-xs">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-[#276EF1] text-white flex items-center justify-center shadow-md">
+                    <Award className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-[#1F1F1F]">Rating & Tip Confirmed!</h3>
+                    <p className="text-xs text-slate-600">Your feedback has been saved to your chauffeur's profile.</p>
+                  </div>
+                  <div className="flex items-center justify-center gap-1.5 py-1">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        className={`w-6 h-6 ${
+                          s <= submittedFeedback.rating
+                            ? 'fill-amber-400 text-amber-400 drop-shadow-xs'
+                            : 'text-slate-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-amber-300 text-amber-900 text-xs font-bold font-mono shadow-2xs">
+                    <span>{submittedFeedback.rating}.0 Star Rating Given</span>
+                  </div>
+                </div>
+
+                {/* Compliments Display */}
+                {submittedFeedback.compliments.length > 0 && (
+                  <div className="p-3.5 bg-[#FCF9F8] rounded-xl border border-[#DCD9D9] space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                      <ThumbsUp className="w-3.5 h-3.5 text-[#276EF1]" />
+                      <span>Compliments Sent:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {submittedFeedback.compliments.map((badge, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-full bg-[#E7F0FF] text-[#276EF1] text-[11px] font-bold border border-[#276EF1]/20"
+                        >
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fare & Tip Breakdown Card */}
+                <div className="p-4 bg-white rounded-xl border border-[#DCD9D9] shadow-xs space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between text-slate-500 pb-2 border-b border-slate-100">
+                    <span className="flex items-center gap-1.5 font-bold text-slate-700">
+                      <Receipt className="w-4 h-4 text-[#276EF1]" />
+                      <span>Payment Receipt</span>
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-400">ID: {submittedFeedback.tripId}</span>
+                  </div>
+
+                  <div className="flex justify-between text-slate-600">
+                    <span>Base Trip Fare:</span>
+                    <span className="font-semibold text-slate-900 font-mono">
+                      ${(submittedFeedback.totalFare - submittedFeedback.tip).toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between text-emerald-700 font-medium">
+                    <span>Chauffeur Tip (100% to Driver):</span>
+                    <span className="font-bold font-mono">
+                      {submittedFeedback.tip > 0 ? `+$${submittedFeedback.tip.toFixed(2)}` : '$0.00 (No Tip)'}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between text-[#1F1F1F] font-extrabold text-sm pt-2 border-t border-slate-100">
+                    <span>Total Amount Charged:</span>
+                    <span className="text-[#276EF1] font-mono text-base font-black">
+                      ${submittedFeedback.totalFare.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="p-2 bg-emerald-50 rounded-lg text-emerald-800 text-[11px] flex items-center justify-between">
+                    <span className="flex items-center gap-1 font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Paid via Stripe (Apple Pay •••• 4242)</span>
+                    </span>
+                    <span className="font-bold uppercase text-[9px] bg-emerald-200/60 px-1.5 py-0.5 rounded">
+                      Captured
+                    </span>
+                  </div>
+                </div>
+
+                {/* Book Another Ride CTA */}
+                <button
+                  onClick={handleCancelTrip}
+                  className="w-full py-4 bg-[#276EF1] hover:bg-[#1A54C9] text-white font-extrabold text-sm rounded-xl transition-all shadow-lg shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Zap className="w-4 h-4 fill-white" />
+                  <span>Book Another Ride</span>
+                </button>
+              </div>
+            )}
+
             {/* 1. IDLE STATE: Location Inputs & Fleet Selection */}
-            {isIdle && (
+            {isIdle && !submittedFeedback && (
               <>
                 {/* Location Input Group with PIN ON MAP Triggers */}
                 <div className="space-y-2.5 relative">
@@ -585,17 +890,46 @@ export default function RiderPage() {
                 </div>
 
                 {/* Real Road Driving Distance & Duration Banner */}
-                <div className="flex items-center justify-between px-2 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <Route className="w-3.5 h-3.5 text-[#276EF1]" />
+                <div
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs transition-colors ${
+                    drivingDistanceKm > MAX_TRIP_DISTANCE_KM
+                      ? 'bg-red-50 border-red-300 text-red-900'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <Route
+                      className={`w-3.5 h-3.5 ${
+                        drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? 'text-red-600' : 'text-[#276EF1]'
+                      }`}
+                    />
                     <span>Real Driving Route:</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-[#276EF1] font-mono">{drivingDistanceKm} km</span>
+                    <span
+                      className={`font-extrabold font-mono ${
+                        drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? 'text-red-700' : 'text-[#276EF1]'
+                      }`}
+                    >
+                      {drivingDistanceKm} km
+                    </span>
                     <span className="text-slate-400">•</span>
                     <span className="text-slate-600 font-semibold">{drivingDurationText} drive</span>
                   </div>
                 </div>
+
+                {/* 100 km Max Range Warning Alert */}
+                {drivingDistanceKm > MAX_TRIP_DISTANCE_KM && (
+                  <div className="p-3 bg-red-50/90 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-800 font-medium">
+                    <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block text-red-900">Maximum Service Range Exceeded</span>
+                      <span>
+                        Trips are capped at a maximum of {MAX_TRIP_DISTANCE_KM} km. Your current route is {drivingDistanceKm} km. Please choose a closer destination.
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Fleet Selection Section */}
                 <div>
@@ -675,18 +1009,29 @@ export default function RiderPage() {
                 {/* Request CTA Button */}
                 <button
                   onClick={handleRequestRide}
-                  className="w-full py-4 bg-[#276EF1] hover:bg-[#1A54C9] text-white font-extrabold text-sm rounded-xl transition-all shadow-lg shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2"
+                  disabled={drivingDistanceKm > MAX_TRIP_DISTANCE_KM}
+                  className={`w-full py-4 font-extrabold text-sm rounded-xl transition-all flex items-center justify-center gap-2 ${
+                    drivingDistanceKm > MAX_TRIP_DISTANCE_KM
+                      ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
+                      : 'bg-[#276EF1] hover:bg-[#1A54C9] text-white shadow-lg shadow-blue-500/25 active:scale-95 cursor-pointer'
+                  }`}
                 >
-                  <Zap className="w-4 h-4 fill-white" />
-                  <span>
-                    Request {activeTierObj.name} (${currentFare.toFixed(2)})
-                  </span>
+                  {drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? (
+                    <span>Max 100 km Limit Exceeded</span>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 fill-white" />
+                      <span>
+                        Request {activeTierObj.name} (${currentFare.toFixed(2)})
+                      </span>
+                    </>
+                  )}
                 </button>
               </>
             )}
 
             {/* 2. MATCHING STATE: Radial Sonar & Dispatching */}
-            {!isIdle && tripState === 'MATCHING' && (
+            {!isIdle && tripState === 'MATCHING' && !submittedFeedback && (
               <div className="text-center py-8 space-y-6">
                 <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
                   <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-ping"></div>
@@ -728,7 +1073,7 @@ export default function RiderPage() {
             )}
 
             {/* 3. ACCEPTED / EN ROUTE TO PICKUP / ARRIVED AT PICKUP */}
-            {!isIdle && (tripState === 'ACCEPTED_EN_ROUTE_PICKUP' || tripState === 'ARRIVED_AT_PICKUP') && (
+            {!isIdle && (tripState === 'ACCEPTED_EN_ROUTE_PICKUP' || tripState === 'ARRIVED_AT_PICKUP') && !submittedFeedback && (
               <div className="space-y-4">
                 {/* 4-DIGIT RIDE PIN CARD */}
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-600 to-[#276EF1] text-white shadow-lg space-y-2">
@@ -747,7 +1092,7 @@ export default function RiderPage() {
                       {generatedOtp}
                     </span>
                     <p className="text-xs text-blue-100 max-w-[160px] text-right font-medium leading-tight">
-                      Share this 4-digit PIN with Marcus once he arrives.
+                      Share this 4-digit PIN with your chauffeur once they arrive.
                     </p>
                   </div>
                 </div>
@@ -777,22 +1122,22 @@ export default function RiderPage() {
                 <div className="p-4 rounded-2xl bg-[#FCF9F8] border border-[#DCD9D9] flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-[#276EF1] text-white font-bold flex items-center justify-center text-base shadow-sm">
-                      {assignedDriver?.driverName ? assignedDriver.driverName[0] : 'M'}
+                      {assignedDriver?.driverName ? assignedDriver.driverName[0].toUpperCase() : 'C'}
                     </div>
                     <div>
                       <h4 className="text-sm font-extrabold text-[#1F1F1F]">
-                        {assignedDriver?.driverName || 'Marcus Sterling'}
+                        {assignedDriver?.driverName || 'Chauffeur Partner'}
                       </h4>
                       <p className="text-xs text-slate-600 font-medium">
-                        {assignedDriver?.vehicleModel || 'Tesla Model S (Obsidian Black)'}
+                        {assignedDriver?.vehicleModel || 'Executive Fleet Vehicle'}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="flex items-center text-[11px] font-bold text-amber-600">
                           <Star className="w-3 h-3 fill-amber-500 mr-1" />
-                          {assignedDriver?.driverRating || 4.98}
+                          {assignedDriver?.driverRating ? assignedDriver.driverRating.toFixed(1) : '5.0'}
                         </span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white font-mono font-bold text-slate-800 border border-slate-200">
-                          {assignedDriver?.licensePlate || 'NY-7890'}
+                          {assignedDriver?.licensePlate || 'NYC-PRIME'}
                         </span>
                       </div>
                     </div>
@@ -819,7 +1164,7 @@ export default function RiderPage() {
             )}
 
             {/* 4. IN TRANSIT TO DESTINATION */}
-            {!isIdle && (tripState === 'IN_TRANSIT' || tripState === 'ARRIVED_AT_DESTINATION') && (
+            {!isIdle && (tripState === 'IN_TRANSIT' || tripState === 'ARRIVED_AT_DESTINATION') && !submittedFeedback && (
               <div className="space-y-4">
                 <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -858,7 +1203,11 @@ export default function RiderPage() {
                   <Award className="w-8 h-8" />
                 </div>
                 <h3 className="text-2xl font-black text-[#1F1F1F] tracking-tight">How was your chauffeur?</h3>
-                <p className="text-xs text-slate-500">Rate your experience with Marcus Sterling (Tesla Model S)</p>
+                <p className="text-xs text-slate-500">
+                  {assignedDriver?.driverName
+                    ? `Rate your experience with ${assignedDriver.driverName} (${assignedDriver.vehicleModel || 'Executive Vehicle'})`
+                    : 'Rate your chauffeur experience'}
+                </p>
               </div>
 
               {/* 5 Interactive Stars */}
@@ -916,7 +1265,9 @@ export default function RiderPage() {
               {/* Tip Selection */}
               <div>
                 <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2 text-center">
-                  Add a Tip for Marcus
+                  {assignedDriver?.driverName
+                    ? `Add a Tip for ${assignedDriver.driverName.split(' ')[0]}`
+                    : 'Add a Driver Tip'}
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   {[2, 5, 10, null].map((tipVal, idx) => (
@@ -941,8 +1292,121 @@ export default function RiderPage() {
                 onClick={handleSubmitRating}
                 className="w-full py-4 bg-[#276EF1] hover:bg-[#1A54C9] text-white font-extrabold text-sm rounded-xl shadow-lg shadow-blue-500/25 transition-all active:scale-95"
               >
-                Submit Feedback & Return Home
+                Submit Feedback & View Receipt
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* 6. ACTIVITY HISTORY & TRIP RECEIPTS MODAL */}
+        {showActivityModal && (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-200">
+            <div className="w-full max-w-2xl max-h-[85vh] bg-white rounded-[28px] border border-[#DCD9D9] p-8 shadow-2xl flex flex-col justify-between overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-[#DCD9D9]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#276EF1] flex items-center justify-center font-bold">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-[#1F1F1F] tracking-tight">Your Activity & Receipts</h3>
+                    <p className="text-xs text-slate-500">
+                      {activityHistory.length} {activityHistory.length === 1 ? 'completed trip' : 'completed trips'} recorded
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowActivityModal(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Trip Cards List */}
+              <div className="flex-1 overflow-y-auto py-4 space-y-3.5 pr-1">
+                {activityHistory.length === 0 ? (
+                  <div className="py-16 text-center space-y-3">
+                    <div className="w-16 h-16 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                      <Car className="w-8 h-8" />
+                    </div>
+                    <h4 className="text-base font-bold text-slate-700">No Past Rides Yet</h4>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                      Completed trips, route details, and payment receipts will appear here after each ride.
+                    </p>
+                  </div>
+                ) : (
+                  activityHistory.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 bg-white rounded-2xl border border-[#DCD9D9] hover:border-[#276EF1]/60 transition-all shadow-xs space-y-3 group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-[#E7F0FF] text-[#276EF1] text-[10px] font-extrabold uppercase tracking-wider">
+                            {item.vehicleType}
+                          </span>
+                          <span className="text-xs text-slate-400 font-medium">{item.date}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-base font-black text-[#1F1F1F] font-mono">
+                            ${item.totalFare.toFixed(2)}
+                          </span>
+                          <span className="block text-[9px] font-bold text-emerald-600 uppercase">Paid • Stripe</span>
+                        </div>
+                      </div>
+
+                      {/* Route Path */}
+                      <div className="space-y-1.5 text-xs text-slate-700 font-medium pl-1 border-l-2 border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[rgb(116,192,252)]"></span>
+                          <span className="truncate">{item.pickupAddress}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-slate-900"></span>
+                          <span className="truncate font-bold text-[#1F1F1F]">{item.dropoffAddress}</span>
+                        </div>
+                      </div>
+
+                      {/* Driver & Rating Footer */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                        <div className="flex items-center gap-2 text-slate-600">
+                          <span className="font-semibold text-slate-800">{item.driverName}</span>
+                          <span className="text-[11px] text-slate-400">({item.vehicleModel.split('(')[0]})</span>
+                          <div className="flex items-center gap-0.5 text-amber-500">
+                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                            <span className="font-bold text-[11px]">{item.rating}.0</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setPickupAddress(item.pickupAddress);
+                            setDropoffAddress(item.dropoffAddress);
+                            setSelectedTier(item.vehicleType as any);
+                            setShowActivityModal(false);
+                            handleResetToBooking();
+                          }}
+                          className="px-3 py-1 bg-slate-100 hover:bg-[#276EF1] hover:text-white text-slate-700 text-xs font-bold rounded-lg transition-all"
+                        >
+                          Rebook Route
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-[#DCD9D9] flex items-center justify-between text-xs text-slate-400">
+                <span>Receipts securely archived</span>
+                <button
+                  onClick={() => setShowActivityModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

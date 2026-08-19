@@ -26,6 +26,10 @@ export interface PersistedTripState {
   dropoffLng: number;
   vehicleType: string;
   fareAmount: number;
+  platformFee?: number;
+  driverNetFare?: number;
+  feePercentage?: number;
+  tipAmount?: number;
   otp: string;
   createdAt: number;
 }

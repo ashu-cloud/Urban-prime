@@ -3,7 +3,7 @@
  */
 
 export interface RouteResult {
-  coordinates: [number, number][];
+  coordinates: [number, number][]; // Array of [lng, lat]
   distanceMeters: number;
   distanceKm: number;
   durationMinutes: number;
@@ -44,4 +44,23 @@ export async function fetchMapboxDirections(
     console.error('Failed to fetch real road directions from Mapbox:', err);
     return null;
   }
+}
+
+/**
+ * Calculates exact road heading / compass bearing in degrees between two GPS points.
+ */
+export function calculateRoadHeading(
+  startLat: number,
+  startLng: number,
+  endLat: number,
+  endLng: number
+): number {
+  const dLng = ((endLng - startLng) * Math.PI) / 180;
+  const lat1 = (startLat * Math.PI) / 180;
+  const lat2 = (endLat * Math.PI) / 180;
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  let brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return Math.round((brng + 360) % 360);
 }

@@ -25,6 +25,7 @@ interface MapboxViewProps {
   drivers?: MarkerLocation[];
   activeLeg?: RouteLegType;
   activePinMode?: 'PICKUP' | 'DROPOFF' | null;
+  showTrackingBadge?: boolean;
   interactive?: boolean;
   className?: string;
   onMapClick?: (coords: { lat: number; lng: number }) => void;
@@ -42,6 +43,7 @@ export default function MapboxView({
   drivers = [],
   activeLeg = 'NONE',
   activePinMode = null,
+  showTrackingBadge = false,
   interactive = true,
   className = 'w-full h-full',
   onMapClick,
@@ -78,6 +80,17 @@ export default function MapboxView({
           primaryDriver.lat,
           pickup.lng,
           pickup.lat,
+          MAPBOX_TOKEN
+        );
+        if (isMounted && result) {
+          setRoadCoordinates(result.coordinates);
+        }
+      } else if (activeLeg === 'TO_DESTINATION' && primaryDriver && dropoff) {
+        const result = await fetchMapboxDirections(
+          primaryDriver.lng,
+          primaryDriver.lat,
+          dropoff.lng,
+          dropoff.lat,
           MAPBOX_TOKEN
         );
         if (isMounted && result) {
@@ -187,7 +200,7 @@ export default function MapboxView({
       }}
       onMouseLeave={() => setMousePos(null)}
     >
-      {/* FontAwesome location-dot (flipped horizontally, rgb(116, 192, 252)) FLOATING MOUSE CURSOR */}
+      {/* FontAwesome location-dot FLOATING MOUSE CURSOR */}
       {activePinMode && mousePos && (
         <div
           className="pointer-events-none fixed z-[9999] transition-none flex flex-col items-center select-none"
@@ -203,14 +216,13 @@ export default function MapboxView({
             <span>{activePinMode === 'PICKUP' ? 'Set Pickup Here' : 'Set Dropoff Here'}</span>
           </div>
 
-          {/* FontAwesome Location Dot SVG Flipped Horizontally with color rgb(116, 192, 252) */}
+          {/* FontAwesome Location Dot SVG */}
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 384 512"
             className="w-10 h-10 drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] animate-bounce"
           >
             <g transform="scale(-1, 1) translate(-384, 0)">
-              {/* Pin body */}
               <path
                 fill="rgb(116, 192, 252)"
                 stroke="#FFFFFF"
@@ -218,12 +230,11 @@ export default function MapboxView({
                 strokeLinejoin="round"
                 d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0z"
               />
-              {/* Inner White Dot */}
               <circle cx="192" cy="192" r="64" fill="#FFFFFF" />
             </g>
           </svg>
 
-          {/* Precision Red/White Laser Target at Pin Tip */}
+          {/* Laser Target Tip */}
           <div className="w-2 h-2 rounded-full bg-white border border-[rgb(116,192,252)] -mt-1 shadow-md"></div>
         </div>
       )}
@@ -245,18 +256,18 @@ export default function MapboxView({
         </div>
       )}
 
-      {/* Floating Live Follow Car Action Button (During Active Navigation) */}
-      {(activeLeg === 'TO_PICKUP' || activeLeg === 'TO_DESTINATION') && primaryDriver && (
+      {/* Floating Recenter Action Button (Only on Rider screen when tracking chauffeur) */}
+      {showTrackingBadge && (activeLeg === 'TO_PICKUP' || activeLeg === 'TO_DESTINATION') && primaryDriver && (
         <div className="absolute top-6 right-6 z-30 flex items-center gap-2">
           <button
             onClick={handleCenterOnCar}
-            className={`px-4 py-2.5 rounded-full font-bold text-xs flex items-center gap-2 shadow-2xl backdrop-blur-md transition-all border ${
+            className={`px-4 py-2 rounded-full font-bold text-xs flex items-center gap-2 shadow-xl backdrop-blur-md transition-all border ${
               followCar
-                ? 'bg-[#276EF1] text-white border-blue-400 ring-2 ring-blue-400/30'
+                ? 'bg-[#276EF1] text-white border-blue-400 shadow-blue-500/25'
                 : 'bg-slate-950/90 text-slate-200 border-slate-700 hover:bg-slate-900'
             }`}
           >
-            <LocateFixed className="w-4 h-4 text-emerald-400" />
+            <LocateFixed className="w-3.5 h-3.5 text-emerald-400" />
             <span>{followCar ? 'Tracking Chauffeur' : 'Recenter on Car'}</span>
           </button>
         </div>
@@ -324,13 +335,13 @@ export default function MapboxView({
           </Marker>
         )}
 
-        {/* Draggable Pickup Marker */}
-        {pickup && (
+        {/* Draggable Pickup Marker (Hidden once rider is picked up and in transit to destination) */}
+        {pickup && activeLeg !== 'TO_DESTINATION' && (
           <Marker
             longitude={pickup.lng}
             latitude={pickup.lat}
             anchor="bottom"
-            draggable={interactive}
+            draggable={interactive && activeLeg === 'NONE'}
             onDragEnd={(e) => {
               if (onPickupDrag) {
                 onPickupDrag({ lat: e.lngLat.lat, lng: e.lngLat.lng });
@@ -358,7 +369,7 @@ export default function MapboxView({
             longitude={dropoff.lng}
             latitude={dropoff.lat}
             anchor="bottom"
-            draggable={interactive}
+            draggable={interactive && activeLeg === 'NONE'}
             onDragEnd={(e) => {
               if (onDropoffDrag) {
                 onDropoffDrag({ lat: e.lngLat.lat, lng: e.lngLat.lng });

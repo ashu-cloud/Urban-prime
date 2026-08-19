@@ -3,20 +3,22 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getStoredSession, clearStoredSession } from '@/lib/api';
-import { Compass, Car, Clock, HelpCircle, Bell, LogOut, ShieldCheck } from 'lucide-react';
+import { getStoredRiderSession, clearStoredRiderSession } from '@/lib/api';
+import { Compass, Car, Clock, HelpCircle, Bell, LogOut } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab?: 'ride' | 'drive' | 'activity' | 'help';
+  activeTab?: 'ride' | 'activity' | 'help';
+  onOpenActivity?: () => void;
+  onOpenHelp?: () => void;
 }
 
-export default function Navbar({ activeTab = 'ride' }: NavbarProps) {
+export default function Navbar({ activeTab = 'ride', onOpenActivity, onOpenHelp }: NavbarProps) {
   const router = useRouter();
-  const session = getStoredSession();
+  const session = getStoredRiderSession();
 
   const handleLogout = () => {
-    clearStoredSession();
-    router.push('/login');
+    clearStoredRiderSession();
+    router.push('/rider/login');
   };
 
   return (
@@ -29,7 +31,7 @@ export default function Navbar({ activeTab = 'ride' }: NavbarProps) {
           </div>
           <div>
             <span className="font-extrabold text-xl tracking-tight text-[#1F1F1F]">URBAN<span className="text-[#276EF1]">PRIME</span></span>
-            <span className="block text-[10px] tracking-widest uppercase font-semibold text-slate-400 -mt-1">Mobility OS</span>
+            <span className="block text-[10px] tracking-widest uppercase font-semibold text-slate-400 -mt-1">Rider Experience</span>
           </div>
         </Link>
 
@@ -44,21 +46,16 @@ export default function Navbar({ activeTab = 'ride' }: NavbarProps) {
             }`}
           >
             <Car className="w-4 h-4" />
-            Ride
-          </Link>
-          <Link
-            href="/driver"
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-              activeTab === 'drive'
-                ? 'bg-white text-[#276EF1] shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            Driver Cockpit
+            Book Ride
           </Link>
           <button
-            onClick={() => alert('Activity history is synced with PostgreSQL.')}
+            onClick={() => {
+              if (onOpenActivity) {
+                onOpenActivity();
+              } else {
+                alert('Trip history is available in the Rider app.');
+              }
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
               activeTab === 'activity'
                 ? 'bg-white text-[#276EF1] shadow-xs'
@@ -69,7 +66,13 @@ export default function Navbar({ activeTab = 'ride' }: NavbarProps) {
             Activity
           </button>
           <button
-            onClick={() => alert('24/7 Priority Concierge available for Urban Prime members.')}
+            onClick={() => {
+              if (onOpenHelp) {
+                onOpenHelp();
+              } else {
+                alert('24/7 Priority Concierge available for Urban Prime members.');
+              }
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
               activeTab === 'help'
                 ? 'bg-white text-[#276EF1] shadow-xs'
@@ -110,12 +113,20 @@ export default function Navbar({ activeTab = 'ride' }: NavbarProps) {
             </button>
           </div>
         ) : (
-          <Link
-            href="/login"
-            className="px-5 py-2.5 bg-[#276EF1] hover:bg-[#1A54C9] text-white text-sm font-bold rounded-xl transition-all shadow-sm active:scale-95"
-          >
-            Sign In
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/rider/login"
+              className="px-4 py-2 text-xs font-bold text-slate-700 hover:text-[#276EF1] transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/rider/signup"
+              className="px-4 py-2 bg-[#276EF1] hover:bg-[#1A54C9] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-blue-500/20 active:scale-95"
+            >
+              Sign Up
+            </Link>
+          </div>
         )}
       </div>
     </header>

@@ -1,191 +1,129 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
-import { Compass, Car, ShieldCheck, ArrowRight, CheckCircle2, Lock, Mail } from 'lucide-react';
+import React from 'react';
+import Link from 'next/link';
+import { Compass, Car, ShieldCheck, ArrowRight, Zap, Star } from 'lucide-react';
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [role, setRole] = useState<'RIDER' | 'DRIVER'>('RIDER');
-  const [email, setEmail] = useState('alexander.vance@urbanprime.com');
-  const [password, setPassword] = useState('••••••••••••');
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      await api.login(email, role);
-      if (role === 'RIDER') {
-        router.push('/rider');
-      } else {
-        router.push('/driver');
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const setDemoUser = (selectedRole: 'RIDER' | 'DRIVER') => {
-    setRole(selectedRole);
-    if (selectedRole === 'RIDER') {
-      setEmail('alexander.vance@urbanprime.com');
-    } else {
-      setEmail('marcus.sterling@driver.urbanprime.com');
-    }
-  };
-
+export default function PortalGatewayPage() {
   return (
     <div className="min-h-screen bg-[#FCF9F8] flex flex-col justify-between select-none">
-      {/* Top Simple Header */}
+      {/* Top Header */}
       <header className="h-[72px] px-8 flex items-center justify-between border-b border-[#DCD9D9] bg-white">
-        <div className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-xl bg-[#276EF1] flex items-center justify-center text-white shadow-md shadow-blue-500/20">
             <Compass className="w-5 h-5" />
           </div>
           <div>
-            <span className="font-extrabold text-xl tracking-tight text-[#1F1F1F]">URBAN<span className="text-[#276EF1]">PRIME</span></span>
-            <span className="block text-[10px] tracking-widest uppercase font-semibold text-slate-400 -mt-1">Ecosystem Access</span>
+            <span className="font-extrabold text-xl tracking-tight text-[#1F1F1F]">
+              URBAN<span className="text-[#276EF1]">PRIME</span>
+            </span>
+            <span className="block text-[10px] tracking-widest uppercase font-semibold text-slate-400 -mt-1">
+              Mobility OS
+            </span>
           </div>
-        </div>
+        </Link>
 
-        <div className="text-xs font-semibold text-slate-500">
-          Enterprise Distributed System
+        <div className="text-xs text-slate-500 font-semibold">
+          High-Availability Distributed System
         </div>
       </header>
 
-      {/* Main Login Card */}
+      {/* Main 2-Card Portal Selector */}
       <main className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-[24px] border border-[#DCD9D9] p-8 shadow-xl">
-          <div className="mb-6 text-center">
-            <h1 className="text-2xl font-bold text-[#1F1F1F] tracking-tight">Welcome to Urban Prime</h1>
-            <p className="text-sm text-slate-500 mt-1">Select your portal to access real-time dispatch</p>
-          </div>
-
-          {/* Role Toggle */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-[#FCF9F8] rounded-2xl border border-[#DCD9D9] mb-6">
-            <button
-              type="button"
-              onClick={() => setDemoUser('RIDER')}
-              className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${
-                role === 'RIDER'
-                  ? 'bg-white text-[#276EF1] shadow-sm border border-blue-100'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Car className="w-4 h-4" />
-              Rider Portal
-            </button>
-            <button
-              type="button"
-              onClick={() => setDemoUser('DRIVER')}
-              className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${
-                role === 'DRIVER'
-                  ? 'bg-white text-[#276EF1] shadow-sm border border-blue-100'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Driver Partner
-            </button>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Work Email
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full bg-[#FCF9F8] border border-[#DCD9D9] rounded-xl pl-10 pr-4 py-2.5 text-sm font-medium text-[#1F1F1F] focus:outline-none focus:border-[#276EF1] focus:ring-2 focus:ring-blue-100 transition-all"
-                  placeholder="name@urbanprime.com"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full bg-[#FCF9F8] border border-[#DCD9D9] rounded-xl pl-10 pr-4 py-2.5 text-sm font-medium text-[#1F1F1F] focus:outline-none focus:border-[#276EF1] focus:ring-2 focus:ring-blue-100 transition-all"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full mt-2 py-3.5 bg-[#276EF1] hover:bg-[#1A54C9] text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <span>Authenticating with Gateway...</span>
-              ) : (
-                <>
-                  <span>Sign In as {role === 'RIDER' ? 'Rider' : 'Driver Partner'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Quick Demo Pre-fill */}
-          <div className="mt-6 pt-6 border-t border-slate-100">
-            <p className="text-[11px] uppercase font-bold tracking-wider text-slate-400 text-center mb-3">
-              1-Click Instant Demo Credentials
+        <div className="w-full max-w-3xl space-y-8">
+          <div className="text-center space-y-2">
+            <h1 className="text-3xl font-black text-[#1F1F1F] tracking-tight">
+              Select Your Access Portal
+            </h1>
+            <p className="text-sm text-slate-500 max-w-md mx-auto">
+              Rider and Driver Partner portals operate with isolated accounts and separate real-time pipelines.
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setDemoUser('RIDER');
-                  api.login('alexander.vance@urbanprime.com', 'RIDER').then(() => router.push('/rider'));
-                }}
-                className="p-2.5 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-50 text-left transition-colors group"
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-[#276EF1]">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Rider Demo
-                </div>
-                <div className="text-[11px] text-slate-500 truncate">Alexander Vance</div>
-              </button>
+          </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setDemoUser('DRIVER');
-                  api.login('marcus.sterling@driver.urbanprime.com', 'DRIVER').then(() => router.push('/driver'));
-                }}
-                className="p-2.5 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-50 text-left transition-colors group"
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Driver Demo
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 1. Rider Portal Card */}
+            <div className="bg-white rounded-[28px] border-2 border-[#DCD9D9] hover:border-[#276EF1] p-8 shadow-xl hover:shadow-2xl transition-all flex flex-col justify-between group">
+              <div className="space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#276EF1] flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                  <Car className="w-7 h-7" />
                 </div>
-                <div className="text-[11px] text-slate-500 truncate">Marcus Sterling</div>
-              </button>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-[#276EF1] text-[10px] font-extrabold uppercase tracking-wider">
+                      Rider App
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-black text-[#1F1F1F]">Rider Portal</h2>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Book executive chauffeur rides, view live Mapbox driving routes, OTP security pins, and seamless payments.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-6 mt-6 border-t border-slate-100 space-y-3">
+                <Link
+                  href="/rider/login"
+                  className="w-full py-3.5 bg-[#276EF1] hover:bg-[#1A54C9] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <span>Sign In as Rider</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+                <div className="text-center">
+                  <Link
+                    href="/rider/signup"
+                    className="text-xs font-bold text-[#276EF1] hover:underline"
+                  >
+                    New Rider? Create Account →
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Driver Partner Portal Card */}
+            <div className="bg-white rounded-[28px] border-2 border-[#DCD9D9] hover:border-[#008A5E] p-8 shadow-xl hover:shadow-2xl transition-all flex flex-col justify-between group">
+              <div className="space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-[#008A5E] flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                  <ShieldCheck className="w-7 h-7" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-[#008A5E] text-[10px] font-extrabold uppercase tracking-wider">
+                      Partner Cockpit
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-black text-[#1F1F1F]">Driver Cockpit</h2>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    High-urgency 15-second dispatches, real-time GPS telemetry, OTP ride start, and shift earnings tracking.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-6 mt-6 border-t border-slate-100 space-y-3">
+                <Link
+                  href="/driver/login"
+                  className="w-full py-3.5 bg-[#008A5E] hover:bg-emerald-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <span>Sign In as Driver Partner</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+                <div className="text-center">
+                  <Link
+                    href="/driver/signup"
+                    className="text-xs font-bold text-[#008A5E] hover:underline"
+                  >
+                    Apply in 3 Minutes & Onboard Fleet →
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="py-4 text-center text-xs text-slate-400 border-t border-[#DCD9D9] bg-white">
-        Urban Prime Orchestration Engine • APISIX Gateway • Kafka Real-Time Stream
+      <footer className="h-[60px] px-8 flex items-center justify-between border-t border-[#DCD9D9] bg-white text-xs text-slate-400">
+        <div>Urban Prime Mobility OS • Isolated Rider & Driver Architectures</div>
+        <div>APISIX Gateway & Centrifugo Mesh</div>
       </footer>
     </div>
   );

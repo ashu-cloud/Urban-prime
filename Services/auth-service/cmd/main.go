@@ -35,16 +35,27 @@ func main() {
 	// 1. Database connection pool
 	pool, err := initDatabase(ctx, cfg.DatabaseDSN)
 	if err != nil {
-		logger.Error(ctx, "Failed to connect to PostgreSQL", "error", err)
+		logger.Error(ctx, "Failed to connect to PostgreSQL (will retry in background)", "error", err)
 	} else {
-		defer pool.Close()
 		runMigrations(ctx, cfg.DatabaseDSN)
 	}
 
 	// 2. Repositories & Managers
-	var repo *repository.UserRepository
-	if pool != nil {
-		repo = repository.NewUserRepository(pool)
+	repo := repository.NewUserRepository(pool)
+
+	if pool == nil {
+		go func() {
+			for {
+				time.Sleep(3 * time.Second)
+				p, err := initDatabase(ctx, cfg.DatabaseDSN)
+				if err == nil {
+					logger.Info(ctx, "Successfully connected to PostgreSQL after retry")
+					repo.SetPool(p)
+					runMigrations(ctx, cfg.DatabaseDSN)
+					break
+				}
+			}
+		}()
 	}
 
 	tokenManager := jwtmgr.NewTokenManager(cfg.JWTSecret, cfg.JWTAccessTTLMin, cfg.JWTRefreshTTLDays)

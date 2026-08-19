@@ -31,7 +31,11 @@ export interface DispatchOfferEvent {
   pickupLng: number;
   dropoffLat: number;
   dropoffLng: number;
-  fareAmount: number;
+  fareAmount: number; // Gross Rider Fare (e.g. $22.00)
+  platformFee?: number; // Progressive Platform Fee (e.g. $4.40)
+  driverNetFare?: number; // Net amount driver receives (e.g. $17.60)
+  feePercentage?: number; // Fee rate (e.g. 20%)
+  tipAmount?: number; // Tip if pre-authorized (100% to chauffeur)
   expiresInSeconds: number;
   otp: string;
 }
@@ -61,6 +65,8 @@ export interface TripStatusEvent {
   pickupCoords?: LocationPoint;
   dropoffCoords?: LocationPoint;
   fareAmount?: number;
+  platformFee?: number;
+  driverNetFare?: number;
   rating?: number;
   tipAmount?: number;
 }
