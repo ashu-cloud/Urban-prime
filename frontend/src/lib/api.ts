@@ -205,18 +205,8 @@ export const api = {
       }
     }
 
-    // If backend is unreachable and user is using the seeded demo account, allow demo access
-    if (cleanEmail === 'alexander.vance@urbanprime.com') {
-      const demoSession: UserSession = {
-        userId: 'rid_001',
-        email: cleanEmail,
-        role: 'RIDER',
-        token: 'mock_jwt_rider_token',
-        name: 'Alexander Vance',
-        phone: '+1 (555) 345-6789',
-      };
-      setStoredRiderSession(demoSession);
-      return demoSession;
+    if (isNetworkError) {
+      throw new Error('Network error: Unable to reach authentication service. Please check your connection.');
     }
 
     // For any other non-existent/unregistered email, strictly reject!
@@ -280,17 +270,11 @@ export const api = {
       }
     }
 
-    // Local registration fallback if backend service is completely unreachable
-    const session: UserSession = {
-      userId: `rid_${Date.now().toString().slice(-4)}`,
-      email: cleanEmail,
-      role: 'RIDER',
-      token: 'jwt_rider_token',
-      name,
-      phone,
-    };
-    setStoredRiderSession(session);
-    return session;
+    if (isNetworkError) {
+      throw new Error('Network error: Unable to reach registration service. Please check your connection.');
+    }
+    
+    throw new Error('Registration failed due to an unknown error.');
   },
 
   // 3. Driver Login (/auth/login with role=DRIVER)
@@ -345,21 +329,8 @@ export const api = {
       }
     }
 
-    // Seeded Demo Chauffeur fallback if backend unreachable
-    if (cleanEmail === 'marcus.sterling@driver.urbanprime.com') {
-      const demoDriver: UserSession = {
-        userId: 'drv_901',
-        email: cleanEmail,
-        role: 'DRIVER',
-        token: 'mock_jwt_driver_token',
-        name: 'Marcus Sterling',
-        rating: 5.0,
-        vehicleModel: 'Tesla Model S (Obsidian Black)',
-        vehiclePlate: 'NY-7890',
-        vehicleType: 'PREMIUM',
-      };
-      setStoredDriverSession(demoDriver);
-      return demoDriver;
+    if (isNetworkError) {
+      throw new Error('Network error: Unable to reach authentication service. Please check your connection.');
     }
 
     throw new Error(
@@ -407,24 +378,23 @@ export const api = {
           vehicle_model: fullVehicleModel,
         }),
       });
-    } catch {
-      // Offline fallback
+      const session: UserSession = {
+        userId: driverId,
+        email: req.email,
+        role: 'DRIVER',
+        token: `jwt_${Date.now()}_driver`,
+        name: req.fullName,
+        phone: req.phone,
+        vehicleModel: fullVehicleModel,
+        vehiclePlate: req.vehiclePlate,
+        vehicleType: req.vehicleType,
+        rating: 5.0,
+      };
+      setStoredSession(session);
+      return session;
+    } catch (err: any) {
+      throw new Error('Failed to register driver: ' + err.message);
     }
-
-    const session: UserSession = {
-      userId: driverId,
-      email: req.email,
-      role: 'DRIVER',
-      token: `jwt_${Date.now()}_driver`,
-      name: req.fullName,
-      phone: req.phone,
-      vehicleModel: fullVehicleModel,
-      vehiclePlate: req.vehiclePlate,
-      vehicleType: req.vehicleType,
-      rating: 5.0,
-    };
-    setStoredSession(session);
-    return session;
   },
 
   // 3. Trip Service via APISIX (/api/v1/trips)
@@ -436,25 +406,13 @@ export const api = {
         body: JSON.stringify(req),
       });
 
-      if (res.ok) {
-        return await res.json();
+      if (!res.ok) {
+        throw new Error('Trip service returned non-OK status: ' + res.status);
       }
-    } catch {
-      // Mock Fallback
+      return await res.json();
+    } catch (err: any) {
+      throw new Error('Failed to create trip: ' + err.message);
     }
-
-    return {
-      tripId: `trip_${Date.now()}`,
-      riderId: req.riderId,
-      status: 'MATCHING',
-      fare: req.fareAmount,
-      fareAmount: req.fareAmount,
-      currency: 'USD',
-      pickupLocation: { latitude: req.pickupLat, longitude: req.pickupLng, address: req.pickupAddress },
-      dropoffLocation: { latitude: req.dropoffLat, longitude: req.dropoffLng, address: req.dropoffAddress },
-      vehicleType: req.vehicleType,
-      createdAt: new Date().toISOString(),
-    };
   },
 
   // 4. Driver Location Telemetry (/api/v1/location/driver)
@@ -463,10 +421,12 @@ export const api = {
       await fetch(`${APISIX_BASE_URL}/api/v1/location/driver`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ driverId, latitude: lat, longitude: lng, heading }),
       });
-    } catch {
-      // Offline fallback
+      if (!res.ok) {
+        throw new Error('Location service returned non-OK status: ' + res.status);
+      }
+    } catch (err: any) {
+      console.error('Failed to update driver location:', err);
     }
   },
 };

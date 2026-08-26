@@ -202,6 +202,7 @@ export default function RiderPage() {
   const [currentTrip, setCurrentTrip] = useState<TripResponse | null>(null);
   const [assignedDriver, setAssignedDriver] = useState<TripStatusEvent | null>(null);
   const [searchSeconds, setSearchSeconds] = useState(0);
+  const [tripError, setTripError] = useState<string | null>(null);
 
   // Rating & Review State
   const [rating, setRating] = useState(5);
@@ -468,6 +469,7 @@ export default function RiderPage() {
     setTripState('MATCHING');
     setActivePinMode(null);
     setSubmittedFeedback(null);
+    setTripError(null);
 
     const newTripId = `trip_${Date.now()}`;
 
@@ -507,38 +509,13 @@ export default function RiderPage() {
         fareAmount: finalFare,
       });
       setCurrentTrip(resp);
-    } catch {
-      setCurrentTrip({
-        tripId: newTripId,
-        riderId: session?.userId || 'rid_001',
-        status: 'MATCHING',
-        fareAmount: finalFare,
-        currency: 'USD',
-        pickupLocation: { latitude: pickupCoords.lat, longitude: pickupCoords.lng, address: pickupAddress },
-        dropoffLocation: { latitude: dropoffCoords.lat, longitude: dropoffCoords.lng, address: dropoffAddress },
-        vehicleType: selectedTier,
-        createdAt: new Date().toISOString(),
-      });
+    } catch (err: any) {
+      tripStore.clear();
+      setIsIdle(true);
+      setTripState('MATCHING');
+      setTripError(err.message || 'Failed to request trip. Our dispatch servers are currently busy.');
+      return;
     }
-
-    // Broadcast dispatch offer over real-time bus with platform fee breakdown
-    realtimeBus.publishDispatchOffer({
-      tripId: newTripId,
-      riderId: session?.userId || 'rid_001',
-      riderName: session?.name || 'Alexander Vance',
-      pickupAddress,
-      dropoffAddress,
-      pickupLat: pickupCoords.lat,
-      pickupLng: pickupCoords.lng,
-      dropoffLat: dropoffCoords.lat,
-      dropoffLng: dropoffCoords.lng,
-      fareAmount: finalFare,
-      platformFee: feeBreakdown.platformFee,
-      driverNetFare: feeBreakdown.driverNetFare,
-      feePercentage: feeBreakdown.feePercentage,
-      expiresInSeconds: 15,
-      otp: otp,
-    });
   };
 
   const handleResetToBooking = () => {
@@ -549,6 +526,7 @@ export default function RiderPage() {
     setShowRatingModal(false);
     setActivePinMode(null);
     setSubmittedFeedback(null);
+    setTripError(null);
     tripStore.clear();
     setPickupAddress('Empire State Building, NYC');
     setDropoffAddress('Grand Central Terminal, NYC');
@@ -717,6 +695,17 @@ export default function RiderPage() {
           </div>
 
           <div className="p-5 overflow-y-auto space-y-5">
+            {/* 0. ERROR STATE */}
+            {tripError && (
+              <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 animate-in fade-in">
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-bold text-red-800">Trip Request Failed</h3>
+                  <p className="text-xs text-red-600 mt-1">{tripError}</p>
+                </div>
+              </div>
+            )}
+
             {/* 0. COMPLETED STATE: SUBMITTED RATING & TIP RECEIPT SUMMARY */}
             {submittedFeedback && (
               <div className="space-y-4 animate-in fade-in duration-300">

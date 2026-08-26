@@ -7,10 +7,9 @@ import (
 	"time"
 
 	"github.com/cab-booking/driver-service/internal/domain"
-	"github.com/cab-booking/driver-service/internal/geo"
 	"github.com/cab-booking/driver-service/internal/kafka"
-	"github.com/cab-booking/driver-service/internal/repository"
 	"github.com/cab-booking/pkg/logger"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -28,18 +27,37 @@ const (
 // 4. Offer ride sequentially (closest driver first).
 // 5. Emit Kafka `MatchOffered` event.
 // 6. Handle acceptance (transition to ON_TRIP, remove from available set) or decline/timeout (release lock, try next nearest candidate).
+type GeoServiceInterface interface {
+	FindNearbyDrivers(ctx context.Context, lat, lng float64, radiusKm float64, limit int) ([]redis.GeoLocation, error)
+	AcquireDispatchLock(ctx context.Context, driverID, tripID string, ttl time.Duration) (bool, error)
+	ReleaseDispatchLock(ctx context.Context, driverID string) error
+	RemoveDriver(ctx context.Context, driverID string) error
+}
+
+type DriverRepoInterface interface {
+	GetByID(ctx context.Context, id string) (*domain.Driver, error)
+	UpdateStatus(ctx context.Context, id string, status domain.DriverStatus) error
+}
+
+type KafkaProducerInterface interface {
+	PublishMatchEvent(ctx context.Context, topic string, payload kafka.MatchEventPayload) error
+}
+
+// DispatchLoop is the core matchmaking engine for ride allocation.
 type DispatchLoop struct {
-	geoService *geo.GeoService               // Redis Geo spatial index client
-	repo       *repository.DriverRepository  // PostgreSQL driver profile repository
-	producer   *kafka.Producer               // Kafka match event producer
+	geoService              GeoServiceInterface
+	repo                    DriverRepoInterface
+	producer                KafkaProducerInterface
+	SimulateDriverResponse  func(ctx context.Context, driverID string) bool
 }
 
 // NewDispatchLoop constructs a new DispatchLoop instance
-func NewDispatchLoop(geoService *geo.GeoService, repo *repository.DriverRepository, producer *kafka.Producer) *DispatchLoop {
+func NewDispatchLoop(geoService GeoServiceInterface, repo DriverRepoInterface, producer KafkaProducerInterface) *DispatchLoop {
 	return &DispatchLoop{
 		geoService: geoService,
 		repo:       repo,
 		producer:   producer,
+		SimulateDriverResponse: defaultSimulateDriverResponse,
 	}
 }
 
@@ -119,7 +137,7 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 		logger.Info(ctx, fmt.Sprintf("Dispatch Offer #%d sent to driver", attempts), "driver_id", driverID, "driver_name", driver.Name, "trip_id", tripID)
 
 		// STEP 3c: OFFER RESPONSE HANDLING / ACCEPTANCE WINDOW
-		accepted := d.simulateDriverResponse(ctx, driverID)
+		accepted := d.SimulateDriverResponse(ctx, driverID)
 
 		if accepted {
 			logger.Info(ctx, "Driver ACCEPTED ride offer!", "driver_id", driverID, "trip_id", tripID)
@@ -176,10 +194,10 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 	return nil, nil
 }
 
-// simulateDriverResponse simulates a realistic driver acceptance window.
+// defaultSimulateDriverResponse simulates a realistic driver acceptance window.
 // In production this would block on a Redis subscription or a WebSocket event.
 // For demo: 70% acceptance rate with a 1-second simulated think-time.
-func (d *DispatchLoop) simulateDriverResponse(ctx context.Context, driverID string) bool {
+func defaultSimulateDriverResponse(ctx context.Context, driverID string) bool {
 	// Simulate driver "thinking" about the offer
 	select {
 	case <-time.After(1 * time.Second):

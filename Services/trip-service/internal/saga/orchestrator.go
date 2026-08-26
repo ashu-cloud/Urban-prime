@@ -10,25 +10,42 @@ import (
 	"github.com/cab-booking/trip-service/internal/kafka"
 	"github.com/cab-booking/trip-service/internal/osrm"
 	"github.com/cab-booking/trip-service/internal/pricing"
-	"github.com/cab-booking/trip-service/internal/repository"
-	"github.com/cab-booking/trip-service/internal/payment"
 	"github.com/google/uuid"
 )
 
+type TripRepo interface {
+	Create(ctx context.Context, trip *domain.Trip) error
+	UpdateStatus(ctx context.Context, id string, newStatus domain.TripStatus, step domain.SagaStepLog) error
+	AssignDriver(ctx context.Context, tripID, driverID string, newStatus domain.TripStatus, step domain.SagaStepLog) error
+}
+
+type OSRMClient interface {
+	GetRoute(ctx context.Context, origin, destination domain.Location) (*osrm.RouteResult, error)
+}
+
+type KafkaProducer interface {
+	PublishTripEvent(ctx context.Context, topic string, payload kafka.TripEventPayload) error
+}
+
+type PaymentClient interface {
+	AuthorizeHold(ctx context.Context, tripID, riderID string, amountCents int64, currency, paymentMethodID string) (string, error)
+	ReleaseHold(ctx context.Context, transactionID, tripID, reason string) error
+}
+
 type Orchestrator struct {
-	repo          *repository.TripRepository
-	osrmClient    *osrm.Client
+	repo          TripRepo
+	osrmClient    OSRMClient
 	calculator    *pricing.Calculator
-	producer      *kafka.Producer
-	paymentClient *payment.Client
+	producer      KafkaProducer
+	paymentClient PaymentClient
 }
 
 func NewOrchestrator(
-	repo *repository.TripRepository,
-	osrmClient *osrm.Client,
+	repo TripRepo,
+	osrmClient OSRMClient,
 	calculator *pricing.Calculator,
-	producer *kafka.Producer,
-	paymentClient *payment.Client,
+	producer KafkaProducer,
+	paymentClient PaymentClient,
 ) *Orchestrator {
 	return &Orchestrator{
 		repo:          repo,

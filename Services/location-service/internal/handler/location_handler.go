@@ -5,24 +5,32 @@ import (
 	"time"
 
 	locationv1 "github.com/cab-booking/proto/gen/location/v1"
-	"github.com/cab-booking/location-service/internal/geo"
 	"github.com/cab-booking/location-service/internal/kafka"
 	"github.com/cab-booking/pkg/logger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+type GeoClientInterface interface {
+	UpdateDriverLocation(ctx context.Context, driverID string, lat, lng float64, onTrip bool) error
+	GetDriverLocation(ctx context.Context, driverID string) (float64, float64, error)
+}
+
+type KafkaProducerInterface interface {
+	PublishLocationUpdate(ctx context.Context, event kafka.LocationEvent) error
+}
+
 // LocationHandler implements the locationv1.LocationServiceServer gRPC interface.
 // This is the hottest code path in the entire platform — every GPS ping from every
 // active driver hits this handler every 3 seconds!
 type LocationHandler struct {
 	locationv1.UnimplementedLocationServiceServer
-	geoClient *geo.GeoClient    // Writes to Redis Geo spatial index
-	producer  *kafka.Producer   // Publishes to Kafka topic `driver.location.v1`
+	geoClient GeoClientInterface    // Writes to Redis Geo spatial index
+	producer  KafkaProducerInterface   // Publishes to Kafka topic `driver.location.v1`
 }
 
 // NewLocationHandler constructs the gRPC handler
-func NewLocationHandler(geoClient *geo.GeoClient, producer *kafka.Producer) *LocationHandler {
+func NewLocationHandler(geoClient GeoClientInterface, producer KafkaProducerInterface) *LocationHandler {
 	return &LocationHandler{
 		geoClient: geoClient,
 		producer:  producer,
