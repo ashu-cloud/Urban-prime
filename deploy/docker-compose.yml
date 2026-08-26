@@ -103,6 +103,35 @@ services:
       - "4317:4317"   # OTLP gRPC receiver
       - "4318:4318"   # OTLP HTTP receiver
 
+  # Go Microservices Backend (All 6 Services)
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    container_name: cab_backend
+    environment:
+      - POSTGRES_DSN=postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:29092
+      - CENTRIFUGO_URL=http://centrifugo:8000
+      - OSRM_HOST=http://router.project-osrm.org
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+      - "50052:50052"
+      - "50053:50053"
+      - "50054:50054"
+      - "50056:50056"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      centrifugo:
+        condition: service_healthy
+
   # Next.js Frontend
   frontend:
     build:
@@ -116,6 +145,7 @@ services:
     depends_on:
       - apisix
       - centrifugo
+      - backend
 
 volumes:
   postgres_data:

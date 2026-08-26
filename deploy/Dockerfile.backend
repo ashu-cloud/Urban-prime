@@ -1,0 +1,16 @@
+FROM golang:1.22-alpine
+
+WORKDIR /app
+
+# Install required tools
+RUN apk add --no-cache git curl bash
+
+# Copy Go workspace configuration
+COPY go.work go.work.sum ./
+COPY pkg/ ./pkg/
+COPY proto/ ./proto/
+COPY Services/ ./Services/
+COPY devserver/ ./devserver/
+
+# Start all 6 Go microservices via the devserver runner
+CMD ["go", "run", "./devserver/main.go"]
