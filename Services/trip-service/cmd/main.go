@@ -16,6 +16,7 @@ import (
 	"github.com/cab-booking/trip-service/internal/handler"
 	"github.com/cab-booking/trip-service/internal/kafka"
 	"github.com/cab-booking/trip-service/internal/osrm"
+	"github.com/cab-booking/trip-service/internal/payment"
 	"github.com/cab-booking/trip-service/internal/pricing"
 	"github.com/cab-booking/trip-service/internal/repository"
 	"github.com/cab-booking/trip-service/internal/saga"

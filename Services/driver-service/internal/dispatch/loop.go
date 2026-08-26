@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/cab-booking/driver-service/internal/domain"
@@ -175,7 +176,16 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 	return nil, nil
 }
 
-// simulateDriverResponse simulates driver acceptance for local development testing
+// simulateDriverResponse simulates a realistic driver acceptance window.
+// In production this would block on a Redis subscription or a WebSocket event.
+// For demo: 70% acceptance rate with a 1-second simulated think-time.
 func (d *DispatchLoop) simulateDriverResponse(ctx context.Context, driverID string) bool {
-	return true
+	// Simulate driver "thinking" about the offer
+	select {
+	case <-time.After(1 * time.Second):
+	case <-ctx.Done():
+		return false
+	}
+	// 70% acceptance rate — realistic for a busy platform
+	return rand.Float32() < 0.70
 }

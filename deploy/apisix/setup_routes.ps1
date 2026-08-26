@@ -4,6 +4,24 @@ $ADMIN_KEY = "edd1c9f034335f136f87ad84b625c8f1"
 
 Write-Host "Configuring Apache APISIX Gateway Routes on $APISIX_ADMIN_URL..." -ForegroundColor Cyan
 
+# 0. Register JWT Consumer
+$consumer = @{
+    username = "urban-prime-user"
+    plugins = @{
+        "jwt-auth" = @{
+            key = "urban-prime-jwt"
+            secret = "your-jwt-secret-here-must-match-AUTH_SERVICE_JWT_SECRET"
+        }
+    }
+} | ConvertTo-Json -Depth 5
+
+try {
+    $res0 = Invoke-RestMethod -Uri "$APISIX_ADMIN_URL/consumers" -Method Put -Headers @{ "X-API-KEY" = $ADMIN_KEY; "Content-Type" = "application/json" } -Body $consumer
+    Write-Host "[OK] JWT Consumer registered successfully" -ForegroundColor Green
+} catch {
+    Write-Host "[WARN] JWT Consumer registration: $_" -ForegroundColor Yellow
+}
+
 # 1. Unauthenticated Auth Routes
 $route1 = @{
     uri = "/auth/*"

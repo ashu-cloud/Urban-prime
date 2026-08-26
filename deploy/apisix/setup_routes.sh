@@ -7,6 +7,21 @@ ADMIN_KEY="edd1c9f034335f136f87ad84b625c8f1"
 
 echo "Configuring Apache APISIX Routes..."
 
+# 0. Register JWT Consumer (required for jwt-auth plugin to validate tokens)
+echo "Registering JWT consumer..."
+curl -i -X PUT "${APISIX_ADMIN_URL}/consumers" \
+  -H "X-API-KEY: ${ADMIN_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "urban-prime-user",
+    "plugins": {
+      "jwt-auth": {
+        "key": "urban-prime-jwt",
+        "secret": "your-jwt-secret-here-must-match-AUTH_SERVICE_JWT_SECRET"
+      }
+    }
+  }'
+
 # 1. Unauthenticated Auth Routes (Login, Register, Refresh)
 curl -i -X PUT "${APISIX_ADMIN_URL}/routes/1" \
   -H "X-API-KEY: ${ADMIN_KEY}" \
