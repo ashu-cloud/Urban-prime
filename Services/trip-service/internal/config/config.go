@@ -25,7 +25,7 @@ func Load() *Config {
 		KafkaBrokers:       getEnv("KAFKA_BROKERS", "localhost:9092"),
 		OSRMHost:           getEnv("OSRM_HOST", "http://router.project-osrm.org"),
 		DriverServiceAddr:  getEnv("DRIVER_SERVICE_ADDR", "localhost:50052"),
-		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50055"),
+		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),
 		BaseFareCents:      getEnvInt64("BASE_FARE_CENTS", 3000),      // ₹30.00
 		PerKmRateCents:     getEnvInt64("PER_KM_RATE_CENTS", 1500),    // ₹15.00/km
 		PerMinRateCents:    getEnvInt64("PER_MIN_RATE_CENTS", 100),     // ₹1.00/min

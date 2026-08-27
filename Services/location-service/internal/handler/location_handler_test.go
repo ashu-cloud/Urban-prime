@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/cab-booking/location-service/internal/kafka"
@@ -122,5 +123,98 @@ func TestUpdateDriverLocation_RedisFailure_ContinuesToPublish(t *testing.T) {
 	}
 	if eventsPublished != 1 {
 		t.Errorf("Expected Kafka event to still publish, got %d", eventsPublished)
+	}
+}
+
+func TestUpdateDriverLocation_InvalidCoordinates(t *testing.T) {
+	handler := NewLocationHandler(&MockGeoClient{}, &MockKafkaProducer{})
+	cases := []struct {
+		name string
+		lat  float64
+		lng  float64
+	}{
+		{"null island", 0, 0},
+		{"lat too high", 91, 10},
+		{"lat too low", -91, 10},
+		{"lng too high", 10, 181},
+		{"lng too low", 10, -181},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := handler.UpdateDriverLocation(context.Background(), &locationv1.UpdateDriverLocationRequest{
+				DriverId:  "driver_1",
+				Latitude:  tc.lat,
+				Longitude: tc.lng,
+			})
+			if err == nil {
+				t.Fatal("expected invalid argument")
+			}
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("code %v", status.Code(err))
+			}
+		})
+	}
+}
+
+func TestGetDriverLocation(t *testing.T) {
+	handler := NewLocationHandler(&MockGeoClient{}, &MockKafkaProducer{})
+	resp, err := handler.GetDriverLocation(context.Background(), &locationv1.GetDriverLocationRequest{DriverId: "driver_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Latitude == 0 && resp.Longitude == 0 {
+		t.Fatal("expected stored coordinates")
+	}
+
+	_, err = handler.GetDriverLocation(context.Background(), &locationv1.GetDriverLocationRequest{})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("code %v", status.Code(err))
+	}
+}
+
+func TestGetDriverLocationNotFound(t *testing.T) {
+	geo := &MockGeoClient{
+		GetDriverLocationFunc: func(ctx context.Context, driverID string) (float64, float64, error) {
+			return 0, 0, errors.New("missing")
+		},
+	}
+	handler := NewLocationHandler(geo, &MockKafkaProducer{})
+	_, err := handler.GetDriverLocation(context.Background(), &locationv1.GetDriverLocationRequest{DriverId: "ghost"})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("code %v", status.Code(err))
+	}
+}
+
+func TestConcurrentLocationUpdates(t *testing.T) {
+	var mu sync.Mutex
+	count := 0
+	geo := &MockGeoClient{
+		UpdateDriverLocationFunc: func(ctx context.Context, driverID string, lat, lng float64, onTrip bool) error {
+			mu.Lock()
+			count++
+			mu.Unlock()
+			return nil
+		},
+	}
+	handler := NewLocationHandler(geo, &MockKafkaProducer{})
+	var wg sync.WaitGroup
+	const n = 200
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			_, err := handler.UpdateDriverLocation(context.Background(), &locationv1.UpdateDriverLocationRequest{
+				DriverId:  "driver_1",
+				Latitude:  12.9,
+				Longitude: 77.5 + float64(i)*0.0001,
+			})
+			if err != nil {
+				t.Errorf("update: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if count != n {
+		t.Fatalf("geo writes %d want %d", count, n)
 	}
 }

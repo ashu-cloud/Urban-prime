@@ -3,7 +3,6 @@ package stripeclient
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/cab-booking/pkg/logger"
@@ -25,10 +24,10 @@ func (c *Client) AuthorizeHold(ctx context.Context, amountCents int64, currency,
 	logger.Info(ctx, "MOCK STRIPE: AuthorizeHold", "amount", amountCents, "currency", currency, "payment_method", paymentMethodID)
 	
 	// Simulate network latency
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
-	// Simulate failures for specific mock payment methods if needed, or 5% random failure rate
-	if paymentMethodID == "pm_fail" || rand.Float32() < 0.05 {
+	// Deterministic failure for the dedicated decline payment method (no random flake rate).
+	if paymentMethodID == "pm_fail" {
 		return "", fmt.Errorf("mock stripe error: card declined")
 	}
 
@@ -40,7 +39,7 @@ func (c *Client) AuthorizeHold(ctx context.Context, amountCents int64, currency,
 func (c *Client) ReleaseHold(ctx context.Context, paymentIntentID string) error {
 	logger.Info(ctx, "MOCK STRIPE: ReleaseHold", "payment_intent", paymentIntentID)
 	
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	if paymentIntentID == "" {
 		return fmt.Errorf("mock stripe error: invalid payment intent ID")
@@ -53,7 +52,7 @@ func (c *Client) ReleaseHold(ctx context.Context, paymentIntentID string) error 
 func (c *Client) CapturePayment(ctx context.Context, paymentIntentID string, finalAmountCents int64) (string, error) {
 	logger.Info(ctx, "MOCK STRIPE: CapturePayment", "payment_intent", paymentIntentID, "final_amount", finalAmountCents)
 	
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	if paymentIntentID == "" {
 		return "", fmt.Errorf("mock stripe error: invalid payment intent ID")

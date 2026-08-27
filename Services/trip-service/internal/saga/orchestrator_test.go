@@ -86,7 +86,12 @@ func setupTestOrchestrator() (*Orchestrator, *MockTripRepo, *MockOSRMClient, *Mo
 	osrmClient := &MockOSRMClient{}
 	producer := &MockKafkaProducer{}
 	paymentClient := &MockPaymentClient{}
-	calculator := pricing.NewCalculator(&config.Config{})
+	calculator := pricing.NewCalculator(&config.Config{
+		BaseFareCents:    3000,
+		PerKmRateCents:   1500,
+		PerMinRateCents:  100,
+		DefaultSurgeMult: 1.0,
+	})
 
 	orc := NewOrchestrator(repo, osrmClient, calculator, producer, paymentClient)
 	return orc, repo, osrmClient, producer, paymentClient
@@ -206,5 +211,31 @@ func TestExecuteCreateTripSaga_MatchmakingUpdateFailure_TriggersFullCompensation
 	}
 	if !paymentClient.ReleaseHoldCalled {
 		t.Error("Expected ReleaseHold to be called as a compensation step after Matchmaking update failed")
+	}
+}
+
+func TestAssignDriverToTrip(t *testing.T) {
+	orc, repo, _, _, _ := setupTestOrchestrator()
+	assigned := false
+	repo.AssignDriverFunc = func(ctx context.Context, tripID, driverID string, newStatus domain.TripStatus, step domain.SagaStepLog) error {
+		assigned = true
+		if tripID != "trip-1" || driverID != "drv-1" || newStatus != domain.StatusAssigned {
+			t.Errorf("unexpected assign %s %s %s", tripID, driverID, newStatus)
+		}
+		return nil
+	}
+	if err := orc.AssignDriverToTrip(context.Background(), "trip-1", "drv-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !assigned {
+		t.Fatal("AssignDriver was not called")
+	}
+}
+
+func TestCompensateNoDriverReleasesHold(t *testing.T) {
+	orc, _, _, _, paymentClient := setupTestOrchestrator()
+	orc.CompensateNoDriverAvailable(context.Background(), "trip-1")
+	if !paymentClient.ReleaseHoldCalled {
+		t.Fatal("expected payment hold release when no driver is available")
 	}
 }

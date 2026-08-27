@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -76,18 +77,35 @@ func (m *MockGeoService) RemoveDriver(ctx context.Context, driverID string) erro
 type MockDriverRepo struct {
 	GetByIDFunc      func(ctx context.Context, id string) (*domain.Driver, error)
 	UpdateStatusFunc func(ctx context.Context, id string, status domain.DriverStatus) error
+
+	mu      sync.Mutex
+	status  map[string]domain.DriverStatus
 }
 
 func (m *MockDriverRepo) GetByID(ctx context.Context, id string) (*domain.Driver, error) {
 	if m.GetByIDFunc != nil {
 		return m.GetByIDFunc(ctx, id)
 	}
-	return &domain.Driver{ID: id, Name: "Test Driver", Status: domain.StatusAvailable}, nil
+	m.mu.Lock()
+	st := domain.StatusAvailable
+	if m.status != nil {
+		if s, ok := m.status[id]; ok {
+			st = s
+		}
+	}
+	m.mu.Unlock()
+	return &domain.Driver{ID: id, Name: "Test Driver", Status: st}, nil
 }
 func (m *MockDriverRepo) UpdateStatus(ctx context.Context, id string, status domain.DriverStatus) error {
 	if m.UpdateStatusFunc != nil {
 		return m.UpdateStatusFunc(ctx, id, status)
 	}
+	m.mu.Lock()
+	if m.status == nil {
+		m.status = make(map[string]domain.DriverStatus)
+	}
+	m.status[id] = status
+	m.mu.Unlock()
 	return nil
 }
 
@@ -190,5 +208,59 @@ func TestDispatchLoop_VehicleTypeMismatch(t *testing.T) {
 	}
 	if driver.ID != "driver_2" {
 		t.Errorf("Expected driver_2 to be assigned, got %s", driver.ID)
+	}
+}
+
+func TestDispatchLoop_NoCandidates(t *testing.T) {
+	geoSvc := NewMockGeoService()
+	geoSvc.FindNearbyDriversFunc = func(ctx context.Context, lat, lng float64, radiusKm float64, limit int) ([]redis.GeoLocation, error) {
+		return nil, nil
+	}
+	loop := NewDispatchLoop(geoSvc, &MockDriverRepo{}, &MockKafkaProducer{})
+	driver, err := loop.FindAndDispatchDriver(context.Background(), "trip_empty", 12.9, 77.5, "SEDAN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if driver != nil {
+		t.Fatal("expected no driver")
+	}
+}
+
+func TestDispatchLoop_HighContention(t *testing.T) {
+	geoSvc := NewMockGeoService()
+	geoSvc.FindNearbyDriversFunc = func(ctx context.Context, lat, lng float64, radiusKm float64, limit int) ([]redis.GeoLocation, error) {
+		return []redis.GeoLocation{{Name: "driver_1"}, {Name: "driver_2"}, {Name: "driver_3"}}, nil
+	}
+	repo := &MockDriverRepo{}
+	loop := NewDispatchLoop(geoSvc, repo, &MockKafkaProducer{})
+	loop.SimulateDriverResponse = func(ctx context.Context, driverID string) bool { return true }
+
+	const trips = 3
+	var wg sync.WaitGroup
+	wg.Add(trips)
+	assigned := make(chan string, trips)
+	for i := 0; i < trips; i++ {
+		go func(i int) {
+			defer wg.Done()
+			d, _ := loop.FindAndDispatchDriver(context.Background(), fmt.Sprintf("trip_%d", i), 12.9, 77.5, "")
+			if d != nil {
+				assigned <- d.ID
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(assigned)
+
+	seen := map[string]bool{}
+	count := 0
+	for id := range assigned {
+		count++
+		if seen[id] {
+			t.Fatalf("driver %s assigned twice", id)
+		}
+		seen[id] = true
+	}
+	if count != trips {
+		t.Fatalf("expected %d assignments, got %d", trips, count)
 	}
 }

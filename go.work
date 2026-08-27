@@ -10,4 +10,5 @@ use (
 	./devserver
 	./pkg
 	./proto
+	./tests/live
 )

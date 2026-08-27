@@ -397,15 +397,14 @@ export default function MapboxView({
             anchor="center"
           >
             <div
-              className="relative transition-transform duration-700 ease-out cursor-pointer z-20"
+              className="relative cursor-pointer z-20 will-change-transform"
               style={{
                 transform: `rotate(${drv.heading || 0}deg)`,
               }}
               title={drv.label || 'Chauffeur Vehicle'}
             >
-              <div className="absolute -inset-2 rounded-full bg-emerald-500/40 animate-ping"></div>
-              <div className="w-10 h-10 rounded-full bg-slate-950 border-2 border-emerald-400 text-white flex items-center justify-center shadow-2xl ring-4 ring-emerald-500/20">
-                <Car className="w-5 h-5 text-emerald-400" />
+              <div className="w-8 h-8 rounded-full bg-slate-950 border-2 border-emerald-400 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                <Car className="w-4 h-4 text-emerald-400" />
               </div>
             </div>
           </Marker>

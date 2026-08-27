@@ -55,6 +55,9 @@ func (h *LocationHandler) UpdateDriverLocation(ctx context.Context, req *locatio
 	if req.Latitude == 0 && req.Longitude == 0 {
 		return nil, status.Error(codes.InvalidArgument, "latitude and longitude are required")
 	}
+	if req.Latitude < -90 || req.Latitude > 90 || req.Longitude < -180 || req.Longitude > 180 {
+		return nil, status.Error(codes.InvalidArgument, "latitude/longitude out of range")
+	}
 
 	onTrip := req.TripId != ""
 

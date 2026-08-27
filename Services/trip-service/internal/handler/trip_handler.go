@@ -6,11 +6,14 @@ import (
 	"github.com/cab-booking/pkg/logger"
 	tripv1 "github.com/cab-booking/proto/gen/trip/v1"
 	"github.com/cab-booking/trip-service/internal/domain"
-	"github.com/cab-booking/trip-service/internal/repository"
 	"github.com/cab-booking/trip-service/internal/saga"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type TripLookup interface {
+	GetByID(ctx context.Context, id string) (*domain.Trip, error)
+}
 
 // TripHandler implements the protobuf-generated `tripv1.TripServiceServer` interface.
 // It acts as the Controller layer in gRPC services, receiving binary gRPC requests,
@@ -18,11 +21,11 @@ import (
 type TripHandler struct {
 	tripv1.UnimplementedTripServiceServer // Embedded struct providing default unimplemented methods
 	orchestrator *saga.Orchestrator        // Saga Orchestrator engine
-	repo         *repository.TripRepository // Database repository
+	repo         TripLookup                // Database repository
 }
 
 // NewTripHandler constructs a new gRPC TripHandler instance
-func NewTripHandler(orchestrator *saga.Orchestrator, repo *repository.TripRepository) *TripHandler {
+func NewTripHandler(orchestrator *saga.Orchestrator, repo TripLookup) *TripHandler {
 	return &TripHandler{
 		orchestrator: orchestrator,
 		repo:         repo,
@@ -38,6 +41,12 @@ func (h *TripHandler) CreateTrip(ctx context.Context, req *tripv1.CreateTripRequ
 	}
 	if req.PickupLocation == nil || req.DropoffLocation == nil {
 		return nil, status.Error(codes.InvalidArgument, "pickup_location and dropoff_location are required")
+	}
+	if !validCoordinates(req.PickupLocation.Latitude, req.PickupLocation.Longitude) {
+		return nil, status.Error(codes.InvalidArgument, "pickup coordinates are invalid")
+	}
+	if !validCoordinates(req.DropoffLocation.Latitude, req.DropoffLocation.Longitude) {
+		return nil, status.Error(codes.InvalidArgument, "dropoff coordinates are invalid")
 	}
 
 	// 2. CONVERT PROTOBUF REQUEST DTO -> DOMAIN COMMAND STRUCT
@@ -173,4 +182,11 @@ func mapDomainTripToProto(t *domain.Trip) *tripv1.Trip {
 		CreatedAt:                t.CreatedAt.Unix(),
 		UpdatedAt:                t.UpdatedAt.Unix(),
 	}
+}
+
+func validCoordinates(lat, lng float64) bool {
+	if lat == 0 && lng == 0 {
+		return false
+	}
+	return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
 }

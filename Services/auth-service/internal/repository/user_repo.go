@@ -87,23 +87,25 @@ func (r *UserRepository) saveInMemory(u *domain.User) {
 func (r *UserRepository) CreateUser(ctx context.Context, u *domain.User) error {
 	emailKey := strings.ToLower(strings.TrimSpace(u.Email))
 
-	r.mu.RLock()
+	r.mu.Lock()
 	if _, exists := r.usersByEmail[emailKey]; exists {
-		r.mu.RUnlock()
+		r.mu.Unlock()
 		return fmt.Errorf("user with email %s already exists", u.Email)
 	}
 	if u.Phone != "" {
 		if _, exists := r.usersByPhone[u.Phone]; exists {
-			r.mu.RUnlock()
+			r.mu.Unlock()
 			return fmt.Errorf("user with phone %s already exists", u.Phone)
 		}
 	}
-	r.mu.RUnlock()
-
-	// Try inserting into PostgreSQL if pool is available
-	r.mu.RLock()
+	// Reserve the identity under the write lock to close the registration race.
+	r.usersByEmail[emailKey] = u
+	r.usersByID[u.ID] = u
+	if u.Phone != "" {
+		r.usersByPhone[u.Phone] = u
+	}
 	pool := r.pool
-	r.mu.RUnlock()
+	r.mu.Unlock()
 
 	if pool != nil {
 		query := `
@@ -112,16 +114,24 @@ func (r *UserRepository) CreateUser(ctx context.Context, u *domain.User) error {
 		`
 		_, err := pool.Exec(ctx, query, u.ID, emailKey, u.Phone, u.PasswordHash, u.FullName, string(u.Role), u.IsActive, u.CreatedAt, u.UpdatedAt)
 		if err != nil {
-			// If DB fails due to duplicate key, return error
 			if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+				r.rollbackInMemory(u, emailKey)
 				return fmt.Errorf("user already exists: %w", err)
 			}
 		}
 	}
 
-	// Always sync in-memory
-	r.saveInMemory(u)
 	return nil
+}
+
+func (r *UserRepository) rollbackInMemory(u *domain.User, emailKey string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.usersByEmail, emailKey)
+	delete(r.usersByID, u.ID)
+	if u.Phone != "" {
+		delete(r.usersByPhone, u.Phone)
+	}
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {

@@ -176,11 +176,11 @@ export const api = {
         if (res.ok) {
           const data = await res.json();
           const session: UserSession = {
-            userId: data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
+            userId: data.user?.user_id || data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
             email: cleanEmail,
             role: 'RIDER',
-            token: data.accessToken || data.token || 'jwt_token',
-            name: data.user?.fullName || data.name || cleanEmail.split('@')[0],
+            token: data.access_token || data.accessToken || data.token || 'jwt_token',
+            name: data.user?.full_name || data.user?.fullName || data.name || cleanEmail.split('@')[0],
             phone: data.user?.phone || data.phone,
           };
           setStoredRiderSession(session);
@@ -243,11 +243,11 @@ export const api = {
         if (res.ok) {
           const data = await res.json();
           const session: UserSession = {
-            userId: data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
+            userId: data.user?.user_id || data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
             email: cleanEmail,
             role: 'RIDER',
-            token: data.accessToken || data.token || 'mock_rider_jwt',
-            name: data.user?.fullName || name,
+            token: data.access_token || data.accessToken || data.token || 'mock_rider_jwt',
+            name: data.user?.full_name || data.user?.fullName || name,
             phone: data.user?.phone || phone,
           };
           setStoredRiderSession(session);
@@ -299,11 +299,11 @@ export const api = {
         if (res.ok) {
           const data = await res.json();
           const session: UserSession = {
-            userId: data.user?.id || data.userId || `drv_${Date.now().toString().slice(-4)}`,
+            userId: data.user?.user_id || data.user?.id || data.userId || `drv_${Date.now().toString().slice(-4)}`,
             email: cleanEmail,
             role: 'DRIVER',
-            token: data.accessToken || data.token || 'mock_driver_jwt',
-            name: data.user?.fullName || data.name || cleanEmail.split('@')[0],
+            token: data.access_token || data.accessToken || data.token || 'mock_driver_jwt',
+            name: data.user?.full_name || data.user?.fullName || data.name || cleanEmail.split('@')[0],
             vehicleModel: data.vehicleModel || 'Executive Fleet Vehicle',
             vehiclePlate: data.vehiclePlate || 'NYC-PRIME',
             vehicleType: (data.vehicleType as any) || 'PREMIUM',
@@ -418,9 +418,10 @@ export const api = {
   // 4. Driver Location Telemetry (/api/v1/location/driver)
   async updateLocation(driverId: string, lat: number, lng: number, heading: number) {
     try {
-      await fetch(`${APISIX_BASE_URL}/api/v1/location/driver`, {
+      const res = await fetch(`${APISIX_BASE_URL}/api/v1/location/driver`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverId, latitude: lat, longitude: lng, heading }),
       });
       if (!res.ok) {
         throw new Error('Location service returned non-OK status: ' + res.status);

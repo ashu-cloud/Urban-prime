@@ -3,6 +3,7 @@ package geo
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -20,11 +21,16 @@ const (
 // making it capable of scaling to 100,000+ concurrent active drivers!
 type GeoService struct {
 	client *redis.Client // Official go-redis client instance
+	mu     sync.Mutex
+	locks  map[string]string
 }
 
 // NewGeoService constructs GeoService instance
 func NewGeoService(client *redis.Client) *GeoService {
-	return &GeoService{client: client}
+	return &GeoService{
+		client: client,
+		locks:  make(map[string]string),
+	}
 }
 
 // AddDriverLocation updates or registers driver coordinates in Redis Geo set `drivers:available`
@@ -102,7 +108,13 @@ func (g *GeoService) FindNearbyDrivers(ctx context.Context, lat, lng float64, ra
 // Redis `SetNX` (Set if Not Exists) acts as an atomic lock, ensuring only one dispatch offer touches a driver at a time.
 func (g *GeoService) AcquireDispatchLock(ctx context.Context, driverID, tripID string, ttl time.Duration) (bool, error) {
 	if g.client == nil {
-		return true, nil // Fallback mock lock if Redis is unconfigured
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if _, taken := g.locks[driverID]; taken {
+			return false, nil
+		}
+		g.locks[driverID] = tripID
+		return true, nil
 	}
 
 	lockKey := fmt.Sprintf("lock:driver:dispatch:%s", driverID)
@@ -117,6 +129,9 @@ func (g *GeoService) AcquireDispatchLock(ctx context.Context, driverID, tripID s
 // ReleaseDispatchLock releases the atomic distributed lock for a driver after dispatch completes or times out
 func (g *GeoService) ReleaseDispatchLock(ctx context.Context, driverID string) error {
 	if g.client == nil {
+		g.mu.Lock()
+		delete(g.locks, driverID)
+		g.mu.Unlock()
 		return nil
 	}
 

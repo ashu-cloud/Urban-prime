@@ -7,12 +7,18 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	TokenTypeAccess  = "access"
+	TokenTypeRefresh = "refresh"
+)
+
 // UserClaims defines custom JWT payload claims
 type UserClaims struct {
 	jwt.RegisteredClaims
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	TokenType string `json:"token_type"`
 }
 
 // TokenManager signs and verifies JWT access & refresh tokens
@@ -41,9 +47,10 @@ func (m *TokenManager) GeneratePair(userID, email, role string) (accessToken str
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTLMin)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
-		UserID: userID,
-		Email:  email,
-		Role:   role,
+		UserID:    userID,
+		Email:     email,
+		Role:      role,
+		TokenType: TokenTypeAccess,
 	}
 	accToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessToken, err = accToken.SignedString(m.secretKey)
@@ -58,9 +65,10 @@ func (m *TokenManager) GeneratePair(userID, email, role string) (accessToken str
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.refreshTTLDays)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
-		UserID: userID,
-		Email:  email,
-		Role:   role,
+		UserID:    userID,
+		Email:     email,
+		Role:      role,
+		TokenType: TokenTypeRefresh,
 	}
 	refToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshToken, err = refToken.SignedString(m.secretKey)
@@ -89,5 +97,17 @@ func (m *TokenManager) ValidateToken(tokenStr string) (*UserClaims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	return claims, nil
+}
+
+// ValidateRefreshToken rejects access tokens and other non-refresh JWTs.
+func (m *TokenManager) ValidateRefreshToken(tokenStr string) (*UserClaims, error) {
+	claims, err := m.ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenType != TokenTypeRefresh {
+		return nil, fmt.Errorf("token is not a refresh token")
+	}
 	return claims, nil
 }

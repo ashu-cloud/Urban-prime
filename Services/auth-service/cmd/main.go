@@ -66,6 +66,8 @@ func main() {
 	mux.HandleFunc("/auth/register", httpHandler.Register)
 	mux.HandleFunc("/auth/login", httpHandler.Login)
 	mux.HandleFunc("/auth/refresh", httpHandler.Refresh)
+	mux.HandleFunc("/health", httpHandler.Health)
+	mux.HandleFunc("/auth/health", httpHandler.Health)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.HTTPPort),

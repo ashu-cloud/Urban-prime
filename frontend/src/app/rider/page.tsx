@@ -35,6 +35,7 @@ import {
   ThumbsUp,
   AlertTriangle,
   Compass,
+  MapPin,
 } from 'lucide-react';
 
 const MAX_TRIP_DISTANCE_KM = 100;
@@ -123,33 +124,17 @@ export interface RiderActivityItem {
 export default function RiderPage() {
   const router = useRouter();
   const [session, setSession] = useState<any>(null);
-  const [pickupAddress, setPickupAddress] = useState('Empire State Building, NYC');
-  const [dropoffAddress, setDropoffAddress] = useState('Grand Central Terminal, NYC');
+  const [pickupAddress, setPickupAddress] = useState('');
+  const [dropoffAddress, setDropoffAddress] = useState('');
   const [selectedTier, setSelectedTier] = useState<VehicleTier['id']>('PREMIUM');
   const [activityHistory, setActivityHistory] = useState<RiderActivityItem[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
 
-  // Hydrate active rider session & restore any pending ride configuration
+  // Hydrate active rider session
   useEffect(() => {
     const currentSession = getStoredRiderSession();
     if (currentSession && currentSession.role === 'RIDER') {
       setSession(currentSession);
-    }
-
-    try {
-      const savedPending = localStorage.getItem('urban_pending_ride');
-      if (savedPending) {
-        const data = JSON.parse(savedPending);
-        if (data.pickupAddress) setPickupAddress(data.pickupAddress);
-        if (data.dropoffAddress) setDropoffAddress(data.dropoffAddress);
-        if (data.pickupCoords) setPickupCoords(data.pickupCoords);
-        if (data.dropoffCoords) setDropoffCoords(data.dropoffCoords);
-        if (data.selectedTier) setSelectedTier(data.selectedTier);
-        if (data.drivingDistanceKm) setDrivingDistanceKm(data.drivingDistanceKm);
-        if (data.drivingDurationText) setDrivingDurationText(data.drivingDurationText);
-      }
-    } catch (e) {
-      console.error('Error hydrating pending ride:', e);
     }
 
     // Hydrate Activity History
@@ -170,24 +155,13 @@ export default function RiderPage() {
   // Generated Ride PIN / OTP for driver verification
   const [generatedOtp, setGeneratedOtp] = useState('8421');
 
-  // Coordinates
-  const [pickupCoords, setPickupCoords] = useState<MarkerLocation>({
-    lat: 40.7484,
-    lng: -73.9857,
-    label: 'Pickup: Empire State',
-    type: 'pickup',
-  });
-
-  const [dropoffCoords, setDropoffCoords] = useState<MarkerLocation>({
-    lat: 40.7527,
-    lng: -73.9772,
-    label: 'Dropoff: Grand Central',
-    type: 'dropoff',
-  });
+  // Coordinates (starts unselected)
+  const [pickupCoords, setPickupCoords] = useState<MarkerLocation | null>(null);
+  const [dropoffCoords, setDropoffCoords] = useState<MarkerLocation | null>(null);
 
   // Exact Street Driving Distance & Duration from Mapbox Directions API
-  const [drivingDistanceKm, setDrivingDistanceKm] = useState<number>(2.4);
-  const [drivingDurationText, setDrivingDurationText] = useState<string>('6 min');
+  const [drivingDistanceKm, setDrivingDistanceKm] = useState<number>(0);
+  const [drivingDurationText, setDrivingDurationText] = useState<string>('');
 
   // Fleet of live simulated drivers nearby
   const [nearbyDrivers, setNearbyDrivers] = useState<MarkerLocation[]>([
@@ -280,6 +254,11 @@ export default function RiderPage() {
   useEffect(() => {
     let isMounted = true;
     async function loadRoadRoute() {
+      if (!pickupCoords || !dropoffCoords) {
+        setDrivingDistanceKm(0);
+        setDrivingDurationText('');
+        return;
+      }
       const result = await fetchMapboxDirections(
         pickupCoords.lng,
         pickupCoords.lat,
@@ -295,27 +274,27 @@ export default function RiderPage() {
     return () => {
       isMounted = false;
     };
-  }, [pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng]);
+  }, [pickupCoords?.lat, pickupCoords?.lng, dropoffCoords?.lat, dropoffCoords?.lng]);
 
   // Map Click Handler for Precision Pin Drop
   const handleMapClick = (coords: { lat: number; lng: number }) => {
-    if (activePinMode === 'PICKUP') {
+    if (activePinMode === 'PICKUP' || (!pickupCoords && !activePinMode)) {
       setPickupCoords({
         lat: coords.lat,
         lng: coords.lng,
         label: `Pickup (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
         type: 'pickup',
       });
-      setPickupAddress(`Custom Pickup (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+      setPickupAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
       setActivePinMode(null);
-    } else if (activePinMode === 'DROPOFF') {
+    } else if (activePinMode === 'DROPOFF' || (pickupCoords && !dropoffCoords && !activePinMode)) {
       setDropoffCoords({
         lat: coords.lat,
         lng: coords.lng,
         label: `Dropoff (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
         type: 'dropoff',
       });
-      setDropoffAddress(`Custom Dropoff (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+      setDropoffAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
       setActivePinMode(null);
     }
   };
@@ -328,7 +307,7 @@ export default function RiderPage() {
       label: `Pickup (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
       type: 'pickup',
     });
-    setPickupAddress(`Custom Pickup (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+    setPickupAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
   };
 
   const handleDropoffDrag = (coords: { lat: number; lng: number }) => {
@@ -338,7 +317,7 @@ export default function RiderPage() {
       label: `Dropoff (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
       type: 'dropoff',
     });
-    setDropoffAddress(`Custom Dropoff (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+    setDropoffAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
   };
 
   // Subscribe to real-time Driver location telemetry and Trip status events
@@ -418,26 +397,34 @@ export default function RiderPage() {
   const assignedDriverLocation = assignedDriver
     ? nearbyDrivers.find((d) => d.id === assignedDriver.driverId) || {
         id: assignedDriver.driverId || 'drv_assigned',
-        lat: assignedDriver.driverLat || pickupCoords.lat,
-        lng: assignedDriver.driverLng || pickupCoords.lng,
+        lat: assignedDriver.driverLat || (pickupCoords ? pickupCoords.lat : 40.7484),
+        lng: assignedDriver.driverLng || (pickupCoords ? pickupCoords.lng : -73.9857),
         heading: 45,
         label: assignedDriver.driverName || 'Marcus Sterling (Tesla Model S)',
       }
     : null;
 
-  const distanceToRider = assignedDriverLocation
+  const distanceToRider = assignedDriverLocation && pickupCoords
     ? getDistanceInMeters(assignedDriverLocation.lat, assignedDriverLocation.lng, pickupCoords.lat, pickupCoords.lng)
     : 160;
 
   // Exact Fare Calculation: Base Price + (Per Km Rate * Actual Road Driving Distance)
   const getTierPrice = (tier: VehicleTier) => {
-    return Number((tier.basePrice + tier.perKm * drivingDistanceKm).toFixed(2));
+    if (drivingDistanceKm > 0) {
+      return Number((tier.basePrice + tier.perKm * drivingDistanceKm).toFixed(2));
+    }
+    return tier.basePrice;
   };
 
   // Request Trip Trigger
   const handleRequestRide = async () => {
+    if (!pickupCoords || !dropoffCoords || !pickupAddress.trim() || !dropoffAddress.trim()) {
+      setTripError('Please select both a pickup location and a destination on the map before booking.');
+      return;
+    }
+
     if (drivingDistanceKm > MAX_TRIP_DISTANCE_KM) {
-      alert(`Trip distance (${drivingDistanceKm} km) exceeds the maximum allowed limit of ${MAX_TRIP_DISTANCE_KM} km.`);
+      setTripError(`Trip distance (${drivingDistanceKm} km) exceeds the maximum allowed limit of ${MAX_TRIP_DISTANCE_KM} km.`);
       return;
     }
 
@@ -528,20 +515,12 @@ export default function RiderPage() {
     setSubmittedFeedback(null);
     setTripError(null);
     tripStore.clear();
-    setPickupAddress('Empire State Building, NYC');
-    setDropoffAddress('Grand Central Terminal, NYC');
-    setPickupCoords({
-      lat: 40.7484,
-      lng: -73.9857,
-      label: 'Pickup: Empire State',
-      type: 'pickup',
-    });
-    setDropoffCoords({
-      lat: 40.7527,
-      lng: -73.9772,
-      label: 'Dropoff: Grand Central',
-      type: 'dropoff',
-    });
+    setPickupAddress('');
+    setDropoffAddress('');
+    setPickupCoords(null);
+    setDropoffCoords(null);
+    setDrivingDistanceKm(0);
+    setDrivingDurationText('');
   };
 
   const handleCancelTrip = () => {
@@ -815,7 +794,7 @@ export default function RiderPage() {
                 <div className="space-y-2.5 relative">
                   <div className="absolute left-[19px] top-[24px] bottom-[24px] w-0.5 bg-gradient-to-b from-[#276EF1] to-slate-800 z-0"></div>
 
-                  {/* Pickup Input + Pin Button */}
+                  {/* Pickup Input + Clear + Pin Button */}
                   <div
                     className={`relative z-10 flex items-center bg-[#FCF9F8] border rounded-xl px-3.5 py-2.5 transition-all ${
                       activePinMode === 'PICKUP'
@@ -831,6 +810,22 @@ export default function RiderPage() {
                       placeholder="Enter pickup address"
                       className="w-full text-xs font-semibold text-[#1F1F1F] bg-transparent focus:outline-none truncate pr-2"
                     />
+                    {pickupAddress && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickupAddress('');
+                          setPickupCoords(null);
+                          setDrivingDistanceKm(0);
+                          setDrivingDurationText('');
+                          if (activePinMode === 'PICKUP') setActivePinMode(null);
+                        }}
+                        title="Clear pickup address"
+                        className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors mr-1.5 flex-shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setActivePinMode(activePinMode === 'PICKUP' ? null : 'PICKUP')}
@@ -846,7 +841,7 @@ export default function RiderPage() {
                     </button>
                   </div>
 
-                  {/* Dropoff Input + Pin Button */}
+                  {/* Dropoff Input + Clear + Pin Button */}
                   <div
                     className={`relative z-10 flex items-center bg-[#FCF9F8] border rounded-xl px-3.5 py-2.5 transition-all ${
                       activePinMode === 'DROPOFF'
@@ -862,6 +857,22 @@ export default function RiderPage() {
                       placeholder="Enter destination"
                       className="w-full text-xs font-semibold text-[#1F1F1F] bg-transparent focus:outline-none truncate pr-2"
                     />
+                    {dropoffAddress && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDropoffAddress('');
+                          setDropoffCoords(null);
+                          setDrivingDistanceKm(0);
+                          setDrivingDurationText('');
+                          if (activePinMode === 'DROPOFF') setActivePinMode(null);
+                        }}
+                        title="Clear destination address"
+                        className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors mr-1.5 flex-shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setActivePinMode(activePinMode === 'DROPOFF' ? null : 'DROPOFF')}
@@ -879,33 +890,43 @@ export default function RiderPage() {
                 </div>
 
                 {/* Real Road Driving Distance & Duration Banner */}
-                <div
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs transition-colors ${
-                    drivingDistanceKm > MAX_TRIP_DISTANCE_KM
-                      ? 'bg-red-50 border-red-300 text-red-900'
-                      : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <Route
-                      className={`w-3.5 h-3.5 ${
-                        drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? 'text-red-600' : 'text-[#276EF1]'
-                      }`}
-                    />
-                    <span>Real Driving Route:</span>
+                {drivingDistanceKm > 0 ? (
+                  <div
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs transition-colors ${
+                      drivingDistanceKm > MAX_TRIP_DISTANCE_KM
+                        ? 'bg-red-50 border-red-300 text-red-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <Route
+                        className={`w-3.5 h-3.5 ${
+                          drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? 'text-red-600' : 'text-[#276EF1]'
+                        }`}
+                      />
+                      <span>Real Driving Route:</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-extrabold font-mono ${
+                          drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? 'text-red-700' : 'text-[#276EF1]'
+                        }`}
+                      >
+                        {drivingDistanceKm} km
+                      </span>
+                      <span className="text-slate-400">•</span>
+                      <span className="text-slate-600 font-semibold">{drivingDurationText} drive</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`font-extrabold font-mono ${
-                        drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? 'text-red-700' : 'text-[#276EF1]'
-                      }`}
-                    >
-                      {drivingDistanceKm} km
-                    </span>
-                    <span className="text-slate-400">•</span>
-                    <span className="text-slate-600 font-semibold">{drivingDurationText} drive</span>
+                ) : (
+                  <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-dashed border-[#DCD9D9] bg-slate-50/60 text-xs text-slate-500">
+                    <div className="flex items-center gap-2">
+                      <Route className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Select pickup &amp; destination on map</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-[#276EF1]">Click &quot;Pin Map&quot;</span>
                   </div>
-                </div>
+                )}
 
                 {/* 100 km Max Range Warning Alert */}
                 {drivingDistanceKm > MAX_TRIP_DISTANCE_KM && (
@@ -998,14 +1019,21 @@ export default function RiderPage() {
                 {/* Request CTA Button */}
                 <button
                   onClick={handleRequestRide}
-                  disabled={drivingDistanceKm > MAX_TRIP_DISTANCE_KM}
+                  disabled={!pickupCoords || !dropoffCoords || drivingDistanceKm > MAX_TRIP_DISTANCE_KM}
                   className={`w-full py-4 font-extrabold text-sm rounded-xl transition-all flex items-center justify-center gap-2 ${
-                    drivingDistanceKm > MAX_TRIP_DISTANCE_KM
-                      ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
+                    !pickupCoords || !dropoffCoords
+                      ? 'bg-slate-200 text-slate-500 cursor-pointer hover:bg-slate-300'
+                      : drivingDistanceKm > MAX_TRIP_DISTANCE_KM
+                      ? 'bg-red-100 text-red-400 border border-red-200 cursor-not-allowed'
                       : 'bg-[#276EF1] hover:bg-[#1A54C9] text-white shadow-lg shadow-blue-500/25 active:scale-95 cursor-pointer'
                   }`}
                 >
-                  {drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? (
+                  {!pickupCoords || !dropoffCoords ? (
+                    <>
+                      <MapPin className="w-4 h-4 text-slate-500" />
+                      <span>Select Pickup &amp; Destination on Map</span>
+                    </>
+                  ) : drivingDistanceKm > MAX_TRIP_DISTANCE_KM ? (
                     <span>Max 100 km Limit Exceeded</span>
                   ) : (
                     <>

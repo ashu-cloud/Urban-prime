@@ -46,6 +46,12 @@ func (c *Calculator) CalculateFare(distanceKm float64, durationSecs int64, surge
 	if surgeMultiplier <= 0 {
 		surgeMultiplier = c.defaultSurgeMult
 	}
+	if distanceKm < 0 {
+		distanceKm = 0
+	}
+	if durationSecs < 0 {
+		durationSecs = 0
+	}
 
 	// Convert travel duration seconds into minutes (rounding up using math.Ceil)
 	durationMins := math.Ceil(float64(durationSecs) / 60.0)

@@ -1,4 +1,4 @@
-.PHONY: help dev up down backend frontend restart status logs proto tidy build clean
+.PHONY: help dev up down backend frontend restart status logs proto tidy build clean test test-load
 
 help:
 	@echo ""
@@ -14,6 +14,8 @@ help:
 	@echo "  make restart    - Restart all Docker containers"
 	@echo "  make status     - View status & health of all containers"
 	@echo "  make logs       - Tail live container logs"
+	@echo "  make test       - Run unit, security, concurrency, health, and live probes"
+	@echo "  make test-load  - Run k6 load/security/concurrency tests (requires k6)"
 	@echo "  make proto      - Recompile Protobuf definitions"
 	@echo "  make tidy       - Run go mod tidy across all modules"
 	@echo "  make build      - Build all Go service binaries"
@@ -80,3 +82,18 @@ build: tidy
 	cd Services/location-service && go build -o bin/location-service ./cmd
 	cd Services/payment-service && go build -o bin/payment-service ./cmd
 	cd Services/notification-service && go build -o bin/notification-service ./cmd
+
+test:
+	cd Services/auth-service && go test ./... -count=1
+	cd Services/trip-service && go test ./... -count=1
+	cd Services/driver-service && go test ./... -count=1
+	cd Services/location-service && go test ./... -count=1
+	cd Services/payment-service && go test ./... -count=1
+	cd Services/notification-service && go test ./... -count=1
+	cd tests/live && go test ./... -count=1
+	cd frontend && npm test
+
+test-load:
+	k6 run scripts/load_test_core_flow.js
+	k6 run scripts/load_test_security.js
+	k6 run scripts/load_test_concurrency.js

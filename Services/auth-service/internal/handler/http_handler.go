@@ -3,7 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cab-booking/auth-service/internal/domain"
 	jwtmgr "github.com/cab-booking/auth-service/internal/jwt"
@@ -12,6 +15,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var emailPattern = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 type HTTPHandler struct {
 	repo       *repository.UserRepository
@@ -60,14 +65,35 @@ func (h *HTTPHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.FullName = strings.TrimSpace(req.FullName)
+
 	if req.Email == "" || req.Password == "" || req.Phone == "" || req.FullName == "" {
 		http.Error(w, "email, password, phone, and full_name are required", http.StatusBadRequest)
 		return
 	}
+	if !emailPattern.MatchString(req.Email) {
+		http.Error(w, "invalid email address", http.StatusBadRequest)
+		return
+	}
+	if err := validatePassword(req.Password); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	role := domain.UserRole(req.Role)
-	if req.Role == "" {
-		role = domain.RoleRider
+	role := domain.RoleRider
+	if req.Role != "" {
+		requested := domain.UserRole(strings.ToUpper(req.Role))
+		if requested == domain.RoleAdmin {
+			http.Error(w, "cannot self-register as ADMIN", http.StatusForbidden)
+			return
+		}
+		if !requested.IsValid() {
+			http.Error(w, "invalid user role", http.StatusBadRequest)
+			return
+		}
+		role = requested
 	}
 
 	// Hash password using bcrypt
@@ -127,9 +153,14 @@ func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.repo.GetByEmail(r.Context(), req.Email)
+	user, err := h.repo.GetByEmail(r.Context(), strings.TrimSpace(strings.ToLower(req.Email)))
 	if err != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	if !user.IsActive {
+		http.Error(w, "Account is disabled", http.StatusForbidden)
 		return
 	}
 
@@ -163,7 +194,7 @@ func (h *HTTPHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, err := h.jwtManager.ValidateToken(req.RefreshToken)
+	claims, err := h.jwtManager.ValidateRefreshToken(req.RefreshToken)
 	if err != nil {
 		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return
@@ -188,8 +219,48 @@ func (h *HTTPHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *HTTPHandler) Health(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"service": "auth-service",
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
+
+func validatePassword(password string) error {
+	if len(password) < 8 {
+		return errPasswordTooShort
+	}
+	hasLetter := false
+	hasDigit := false
+	for _, r := range password {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+		}
+		if unicode.IsDigit(r) {
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return errPasswordWeak
+	}
+	return nil
+}
+
+type simpleError string
+
+func (e simpleError) Error() string { return string(e) }
+
+const (
+	errPasswordTooShort simpleError = "password must be at least 8 characters"
+	errPasswordWeak     simpleError = "password must contain letters and numbers"
+)

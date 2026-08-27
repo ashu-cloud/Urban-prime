@@ -2,10 +2,9 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"github.com/cab-booking/payment-service/internal/domain"
-	"github.com/cab-booking/payment-service/internal/repository"
-	"github.com/cab-booking/payment-service/internal/stripeclient"
 	"github.com/cab-booking/pkg/logger"
 	paymentv1 "github.com/cab-booking/proto/gen/payment/v1"
 	"github.com/google/uuid"
@@ -13,13 +12,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type PaymentHandler struct {
-	paymentv1.UnimplementedPaymentServiceServer
-	repo         *repository.TransactionRepository
-	stripeClient *stripeclient.Client
+type TransactionStore interface {
+	Create(ctx context.Context, tx *domain.Transaction) error
+	UpdateStatus(ctx context.Context, txID string, status domain.TransactionStatus) error
+	GetByTripID(ctx context.Context, tripID string) (*domain.Transaction, error)
 }
 
-func NewPaymentHandler(repo *repository.TransactionRepository, stripeClient *stripeclient.Client) *PaymentHandler {
+type StripeAPI interface {
+	AuthorizeHold(ctx context.Context, amountCents int64, currency, paymentMethodID string) (string, error)
+	ReleaseHold(ctx context.Context, paymentIntentID string) error
+	CapturePayment(ctx context.Context, paymentIntentID string, finalAmountCents int64) (string, error)
+}
+
+type PaymentHandler struct {
+	paymentv1.UnimplementedPaymentServiceServer
+	repo         TransactionStore
+	stripeClient StripeAPI
+}
+
+func NewPaymentHandler(repo TransactionStore, stripeClient StripeAPI) *PaymentHandler {
 	return &PaymentHandler{
 		repo:         repo,
 		stripeClient: stripeClient,
@@ -27,9 +38,20 @@ func NewPaymentHandler(repo *repository.TransactionRepository, stripeClient *str
 }
 
 func (h *PaymentHandler) AuthorizeHold(ctx context.Context, req *paymentv1.AuthorizeHoldRequest) (*paymentv1.AuthorizeHoldResponse, error) {
+	if req.TripId == "" || req.RiderId == "" {
+		return nil, status.Error(codes.InvalidArgument, "trip_id and rider_id are required")
+	}
+	if req.AmountCents <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "amount_cents must be greater than zero")
+	}
+	if req.Currency == "" {
+		req.Currency = "INR"
+	}
+
 	// Attempt Stripe authorization
 	paymentIntentID, err := h.stripeClient.AuthorizeHold(ctx, req.AmountCents, req.Currency, req.PaymentMethodId)
-	
+
+	now := time.Now()
 	tx := &domain.Transaction{
 		ID:                    uuid.New().String(),
 		TripID:                req.TripId,
@@ -38,6 +60,8 @@ func (h *PaymentHandler) AuthorizeHold(ctx context.Context, req *paymentv1.Autho
 		Currency:              req.Currency,
 		StripePaymentIntentID: paymentIntentID,
 		Status:                domain.StatusHoldPending,
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 
 	if err != nil {
@@ -90,6 +114,12 @@ func (h *PaymentHandler) ReleaseHold(ctx context.Context, req *paymentv1.Release
 }
 
 func (h *PaymentHandler) CapturePayment(ctx context.Context, req *paymentv1.CapturePaymentRequest) (*paymentv1.CapturePaymentResponse, error) {
+	if req.TripId == "" {
+		return nil, status.Error(codes.InvalidArgument, "trip_id is required")
+	}
+	if req.FinalAmountCents < 0 {
+		return nil, status.Error(codes.InvalidArgument, "final_amount_cents cannot be negative")
+	}
 	tx, err := h.repo.GetByTripID(ctx, req.TripId)
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "transaction not found")

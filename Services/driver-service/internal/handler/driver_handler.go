@@ -8,26 +8,31 @@ import (
 	"github.com/cab-booking/driver-service/internal/dispatch"
 	"github.com/cab-booking/driver-service/internal/domain"
 	"github.com/cab-booking/driver-service/internal/geo"
-	"github.com/cab-booking/driver-service/internal/repository"
 	"github.com/cab-booking/pkg/logger"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+type DriverStore interface {
+	GetByID(ctx context.Context, id string) (*domain.Driver, error)
+	UpdateStatus(ctx context.Context, id string, status domain.DriverStatus) error
+	CreateDriver(ctx context.Context, driver *domain.Driver) error
+}
+
 // DriverHandler implements the protobuf-generated `driverv1.DriverServiceServer` gRPC interface.
 type DriverHandler struct {
 	driverv1.UnimplementedDriverServiceServer
 	dispatchLoop *dispatch.DispatchLoop
 	geoService   *geo.GeoService
-	repo         *repository.DriverRepository
+	repo         DriverStore
 }
 
 // NewDriverHandler constructs a new DriverHandler instance
 func NewDriverHandler(
 	dispatchLoop *dispatch.DispatchLoop,
 	geoService *geo.GeoService,
-	repo *repository.DriverRepository,
+	repo DriverStore,
 ) *DriverHandler {
 	return &DriverHandler{
 		dispatchLoop: dispatchLoop,
@@ -78,6 +83,17 @@ func (h *DriverHandler) UpdateDriverStatus(ctx context.Context, req *driverv1.Up
 
 	statusDomain := mapProtoStatusToDomain(req.Status)
 
+	driver, err := h.repo.GetByID(ctx, req.DriverId)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "driver not found: %v", err)
+	}
+
+	if driver.Status != statusDomain {
+		if err := driver.ValidateTransition(statusDomain); err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+		}
+	}
+
 	// Update PostgreSQL status
 	if err := h.repo.UpdateStatus(ctx, req.DriverId, statusDomain); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to update status: %v", err)
@@ -92,10 +108,7 @@ func (h *DriverHandler) UpdateDriverStatus(ctx context.Context, req *driverv1.Up
 		_ = h.geoService.RemoveDriver(ctx, req.DriverId)
 	}
 
-	driver, err := h.repo.GetByID(ctx, req.DriverId)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to fetch updated driver: %v", err)
-	}
+	driver, err = h.repo.GetByID(ctx, req.DriverId)
 
 	return &driverv1.UpdateDriverStatusResponse{
 		Success: true,

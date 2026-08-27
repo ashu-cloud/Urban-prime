@@ -9,11 +9,16 @@ import (
 var globalLogger *slog.Logger
 
 func init() {
+	Init("cab-booking")
+}
+
+// Init configures the process-wide structured logger with a service name.
+func Init(serviceName string) {
 	opts := &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}
 	handler := slog.NewJSONHandler(os.Stdout, opts)
-	globalLogger = slog.New(handler)
+	globalLogger = slog.New(handler).With("service", serviceName)
 	slog.SetDefault(globalLogger)
 }
 

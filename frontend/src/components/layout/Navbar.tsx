@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getStoredRiderSession, clearStoredRiderSession } from '@/lib/api';
@@ -14,7 +14,13 @@ interface NavbarProps {
 
 export default function Navbar({ activeTab = 'ride', onOpenActivity, onOpenHelp }: NavbarProps) {
   const router = useRouter();
-  const session = getStoredRiderSession();
+  const [mounted, setMounted] = useState(false);
+  const [session, setSession] = useState<any>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    setSession(getStoredRiderSession());
+  }, []);
 
   const handleLogout = () => {
     clearStoredRiderSession();
@@ -95,7 +101,22 @@ export default function Navbar({ activeTab = 'ride', onOpenActivity, onOpenHelp 
           <span className="w-2 h-2 rounded-full bg-[#276EF1] absolute top-2 right-2 ring-2 ring-white"></span>
         </button>
 
-        {session ? (
+        {!mounted || !session ? (
+          <div className="flex items-center gap-2">
+            <Link
+              href="/rider/login"
+              className="px-4 py-2 text-xs font-bold text-slate-700 hover:text-[#276EF1] transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/rider/signup"
+              className="px-4 py-2 bg-[#276EF1] hover:bg-[#1A54C9] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-blue-500/20 active:scale-95"
+            >
+              Sign Up
+            </Link>
+          </div>
+        ) : (
           <div className="flex items-center gap-3 pl-2 border-l border-[#DCD9D9]">
             <div className="w-9 h-9 rounded-full bg-[#E7F0FF] text-[#276EF1] font-bold text-sm flex items-center justify-center border border-[#276EF1]/20">
               {session.name ? session.name[0] : 'U'}
@@ -111,21 +132,6 @@ export default function Navbar({ activeTab = 'ride', onOpenActivity, onOpenHelp 
             >
               <LogOut className="w-4 h-4" />
             </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/rider/login"
-              className="px-4 py-2 text-xs font-bold text-slate-700 hover:text-[#276EF1] transition-colors"
-            >
-              Sign In
-            </Link>
-            <Link
-              href="/rider/signup"
-              className="px-4 py-2 bg-[#276EF1] hover:bg-[#1A54C9] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-blue-500/20 active:scale-95"
-            >
-              Sign Up
-            </Link>
           </div>
         )}
       </div>

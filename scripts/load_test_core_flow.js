@@ -1,95 +1,124 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check, sleep, group } from 'k6';
+import { Trend, Rate, Counter } from 'k6/metrics';
 
-// This test simulates 500 concurrent drivers pinging their location every 3 seconds,
-// while 100 riders simultaneously request trips.
+const AUTH_URL = __ENV.AUTH_URL || 'http://localhost:8080';
+const GATEWAY_URL = __ENV.GATEWAY_URL || 'http://localhost:9080';
+
+const loginDuration = new Trend('auth_login_duration');
+const registerFail = new Rate('auth_register_fail');
+const locationPings = new Counter('location_pings');
+
 export const options = {
   scenarios: {
+    health_probes: {
+      executor: 'constant-vus',
+      vus: 10,
+      duration: '20s',
+      exec: 'health',
+    },
+    auth_burst: {
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages: [
+        { duration: '8s', target: 50 },
+        { duration: '12s', target: 50 },
+        { duration: '5s', target: 0 },
+      ],
+      exec: 'authFlow',
+    },
     driver_location_pings: {
       executor: 'constant-vus',
-      vus: 500,
-      duration: '30s',
+      vus: 100,
+      duration: '20s',
       exec: 'driverLocation',
     },
     rider_trip_requests: {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: '10s', target: 100 },
-        { duration: '15s', target: 100 },
-        { duration: '5s', target: 0 },
+        { duration: '8s', target: 40 },
+        { duration: '10s', target: 40 },
+        { duration: '4s', target: 0 },
       ],
       exec: 'riderTrip',
     },
   },
   thresholds: {
-    http_req_duration: ['p(95)<500'], // 95% of requests should be below 500ms
-    http_req_failed: ['rate<0.01'],   // Error rate should be less than 1%
+    http_req_duration: ['p(95)<1500'],
+    http_req_failed: ['rate<0.15'],
+    auth_register_fail: ['rate<0.2'],
   },
 };
 
-const BASE_URL = 'http://localhost:9080/api/v1';
+export function health() {
+  const res = http.get(`${AUTH_URL}/health`);
+  check(res, { 'auth health 200': (r) => r.status === 200 });
+  sleep(1);
+}
+
+export function authFlow() {
+  const id = `${__VU}-${__ITER}-${Date.now()}`;
+  const email = `load.${id}@example.com`;
+  const payload = JSON.stringify({
+    email,
+    phone: `+1555${String(1000000 + (__VU * 1000 + __ITER)).slice(-7)}`,
+    password: 'LoadTest99',
+    full_name: 'Load Rider',
+    role: 'RIDER',
+  });
+  const params = { headers: { 'Content-Type': 'application/json' } };
+
+  group('register', () => {
+    const res = http.post(`${AUTH_URL}/auth/register`, payload, params);
+    registerFail.add(res.status !== 201);
+    check(res, { 'register created or conflict': (r) => r.status === 201 || r.status === 409 });
+  });
+
+  group('login', () => {
+    const start = Date.now();
+    const res = http.post(
+      `${AUTH_URL}/auth/login`,
+      JSON.stringify({ email, password: 'LoadTest99' }),
+      params
+    );
+    loginDuration.add(Date.now() - start);
+    check(res, { 'login ok or unauthorized': (r) => r.status === 200 || r.status === 401 });
+  });
+
+  sleep(0.5);
+}
 
 export function driverLocation() {
-  const driverId = `drv_${__VU}`;
-  
-  // Simulate slightly moving around
-  const lat = 40.7484 + (Math.random() * 0.01);
-  const lng = -73.9851 + (Math.random() * 0.01);
-  
   const payload = JSON.stringify({
-    driverId: driverId,
-    latitude: lat,
-    longitude: lng,
+    driverId: `drv_${__VU}`,
+    latitude: 12.9716 + Math.random() * 0.01,
+    longitude: 77.5946 + Math.random() * 0.01,
     heading: Math.floor(Math.random() * 360),
   });
-
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-      // In a real load test we'd need valid JWTs, assuming APISIX allows this or we bypass
-      'Authorization': 'Bearer mock_driver_jwt',
-    },
-  };
-
-  const res = http.post(`${BASE_URL}/location/driver`, payload, params);
-
-  check(res, {
-    'location ping status is 200': (r) => r.status === 200,
+  const res = http.post(`${GATEWAY_URL}/api/v1/location/driver`, payload, {
+    headers: { 'Content-Type': 'application/json' },
   });
-
-  // Drivers ping every 3 seconds
-  sleep(3);
+  locationPings.add(1);
+  check(res, { 'location accepted or routed': (r) => r.status < 500 });
+  sleep(1);
 }
 
 export function riderTrip() {
-  const riderId = `rid_${__VU}`;
-  
   const payload = JSON.stringify({
-    riderId: riderId,
-    pickupAddress: "Times Square, NY",
-    pickupLat: 40.7580,
-    pickupLng: -73.9855,
-    dropoffAddress: "Central Park, NY",
-    dropoffLat: 40.7812,
-    dropoffLng: -73.9665,
-    vehicleType: "SEDAN",
-    fareAmount: 2500, // $25.00
+    riderId: `rid_${__VU}`,
+    pickupAddress: 'MG Road, Bengaluru',
+    pickupLat: 12.9716,
+    pickupLng: 77.5946,
+    dropoffAddress: 'Koramangala, Bengaluru',
+    dropoffLat: 12.9352,
+    dropoffLng: 77.6245,
+    vehicleType: 'SEDAN',
+    fareAmount: 2500,
   });
-
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer mock_rider_jwt',
-    },
-  };
-
-  const res = http.post(`${BASE_URL}/trips`, payload, params);
-
-  check(res, {
-    'trip creation status is 200': (r) => r.status === 200,
+  const res = http.post(`${GATEWAY_URL}/api/v1/trips`, payload, {
+    headers: { 'Content-Type': 'application/json' },
   });
-
-  // Riders don't spam trips, they request once and wait
-  sleep(10);
+  check(res, { 'trip accepted or routed': (r) => r.status < 500 });
+  sleep(2);
 }

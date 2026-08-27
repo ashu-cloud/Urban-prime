@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -95,7 +96,7 @@ func fallbackHaversineRoute(pickup, dropoff domain.Location) *RouteResult {
 	// Approximate distance calculation using latitude/longitude delta
 	latDiff := (dropoff.Latitude - pickup.Latitude) * 111.0
 	lngDiff := (dropoff.Longitude - pickup.Longitude) * 111.0 * 0.85
-	distKm := (latDiff*latDiff + lngDiff*lngDiff)
+	distKm := math.Sqrt(latDiff*latDiff + lngDiff*lngDiff)
 	if distKm < 0.5 {
 		distKm = 0.5
 	}
