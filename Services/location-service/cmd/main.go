@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -78,12 +79,24 @@ func main() {
 		}
 	}()
 
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%s", cfg.HTTPPort),
+		Handler: locationHandler.Routes(),
+	}
+	go func() {
+		logger.Info(ctx, "Location Service HTTP REST adapter listening", "address", httpServer.Addr)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error(ctx, "HTTP server stopped unexpectedly", "error", err)
+		}
+	}()
+
 	// 6. GRACEFUL SHUTDOWN — wait for SIGINT or SIGTERM
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info(ctx, "Shutting down Location Service gracefully...")
+	_ = httpServer.Shutdown(context.Background())
 	grpcServer.GracefulStop()
 	logger.Info(ctx, "Location Service stopped cleanly")
 }

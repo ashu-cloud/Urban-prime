@@ -1,4 +1,4 @@
-.PHONY: help dev up down backend frontend restart status logs proto tidy build clean test test-load
+.PHONY: help dev up up-full down backend frontend restart status logs proto tidy build clean test test-load routes
 
 help:
 	@echo ""
@@ -7,7 +7,9 @@ help:
 	@echo "=========================================================="
 	@echo ""
 	@echo "  make dev        - 🚀 1-Command Dev: Starts Docker infra + all 6 Go services"
-	@echo "  make up         - Start all Docker containers (DB, Redis, Kafka, APISIX, Centrifugo, Frontend)"
+	@echo "  make up         - Start Docker infra only (DB, Redis, Kafka, APISIX, Centrifugo)"
+	@echo "  make up-full    - Start infra + backend + frontend containers"
+	@echo "  make routes     - Register APISIX routes for /auth and /api/v1"
 	@echo "  make down       - Stop all Docker containers"
 	@echo "  make backend    - Run all 6 Go microservices concurrently with colored logs"
 	@echo "  make frontend   - Run Next.js frontend in local dev mode (npm run dev)"
@@ -21,23 +23,31 @@ help:
 	@echo "  make build      - Build all Go service binaries"
 	@echo ""
 
-# 1-Command Full Dev Environment
-dev: up
+# 1-Command Full Dev Environment (infra in Docker, Go services on the host)
+dev: up routes
 	@echo ""
 	@echo "⚡ Infrastructure is ready. Launching all 6 Go Microservices..."
 	@echo ""
 	go run ./devserver/main.go
 
-# Start Docker Infrastructure & Frontend
+# Start Docker Infrastructure only (so host `make backend` can bind 8080/50051+)
 up:
-	docker-compose -f deploy/docker-compose.yml up -d
+	docker compose -f deploy/docker-compose.yml up -d
+
+# Start infrastructure plus containerized backend + frontend
+up-full:
+	docker compose -f deploy/docker-compose.yml --profile full up -d --build
 
 # Stop Docker Infrastructure
 down:
-	docker-compose -f deploy/docker-compose.yml down
+	docker compose -f deploy/docker-compose.yml --profile full down
 
 # Restart Docker Infrastructure
 restart: down up
+
+# Register APISIX routes that match the frontend and k6 scripts
+routes:
+	powershell -ExecutionPolicy Bypass -File deploy/apisix/setup_routes.ps1
 
 # Run all 6 Go microservices in 1 terminal with color-coded live logs
 backend:
@@ -72,6 +82,8 @@ tidy:
 	cd Services/location-service && go mod tidy
 	cd Services/payment-service && go mod tidy
 	cd Services/notification-service && go mod tidy
+	cd tests/live && go mod tidy
+	cd proto && go mod tidy
 	cd devserver && go mod tidy
 
 # Build all Go service binaries into /bin
@@ -84,6 +96,7 @@ build: tidy
 	cd Services/notification-service && go build -o bin/notification-service ./cmd
 
 test:
+	cd pkg && go test ./... -count=1
 	cd Services/auth-service && go test ./... -count=1
 	cd Services/trip-service && go test ./... -count=1
 	cd Services/driver-service && go test ./... -count=1

@@ -87,6 +87,8 @@ services:
     container_name: cab_apisix
     depends_on:
       - etcd
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "9080:9080"
       - "9090:9090"
@@ -103,18 +105,26 @@ services:
       - "4317:4317"   # OTLP gRPC receiver
       - "4318:4318"   # OTLP HTTP receiver
 
-  # Go Microservices Backend (All 6 Services)
+  # Go Microservices Backend (All 6 Services) — use: docker compose --profile full up
   backend:
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: deploy/Dockerfile.backend
     container_name: cab_backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - POSTGRES_DSN=postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable
+      - DATABASE_URL=postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable
       - REDIS_ADDR=redis:6379
       - KAFKA_BROKERS=kafka:29092
       - CENTRIFUGO_URL=http://centrifugo:8000
+      - CENTRIFUGO_API_KEY=my_secret_api_key
       - OSRM_HOST=http://router.project-osrm.org
+      - PAYMENT_SERVICE_ADDR=localhost:50054
+      - DRIVER_SERVICE_ADDR=localhost:50052
+      - JWT_SECRET=super_secret_jwt_signing_key_change_in_production
     ports:
       - "8080:8080"
       - "50051:50051"
@@ -122,6 +132,9 @@ services:
       - "50053:50053"
       - "50054:50054"
       - "50056:50056"
+      - "8051:8051"
+      - "8052:8052"
+      - "8053:8053"
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,8 +145,9 @@ services:
       centrifugo:
         condition: service_healthy
 
-  # Next.js Frontend
+  # Next.js Frontend — use: docker compose --profile full up
   frontend:
+    profiles: ["full"]
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -142,10 +156,11 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:9080
+      - NEXT_PUBLIC_CENTRIFUGO_WS=ws://localhost:8000/connection/websocket
     depends_on:
       - apisix
       - centrifugo
-      - backend
 
 volumes:
   postgres_data:

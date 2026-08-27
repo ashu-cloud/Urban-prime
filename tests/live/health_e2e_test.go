@@ -31,6 +31,9 @@ func TestInfrastructureHealth(t *testing.T) {
 		{name: "location-grpc", network: "tcp", addr: envOr("LOCATION_GRPC_ADDR", "127.0.0.1:50053")},
 		{name: "payment-grpc", network: "tcp", addr: envOr("PAYMENT_GRPC_ADDR", "127.0.0.1:50054")},
 		{name: "auth-grpc", network: "tcp", addr: envOr("AUTH_GRPC_ADDR", "127.0.0.1:50056")},
+		{name: "trip-http", network: "tcp", addr: envOr("TRIP_HTTP_ADDR", "127.0.0.1:8051")},
+		{name: "driver-http", network: "tcp", addr: envOr("DRIVER_HTTP_ADDR", "127.0.0.1:8052")},
+		{name: "location-http", network: "tcp", addr: envOr("LOCATION_HTTP_ADDR", "127.0.0.1:8053")},
 	}
 
 	up := 0

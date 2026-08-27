@@ -3,6 +3,9 @@ package handler
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -201,5 +204,30 @@ func TestConcurrentCreateTrip(t *testing.T) {
 	close(errCh)
 	for err := range errCh {
 		t.Error(err)
+	}
+}
+
+func TestCreateTripHTTPMapsFrontendPayload(t *testing.T) {
+	h, _ := newTripHandler()
+	body := `{"riderId":"rider-1","pickupAddress":"MG Road","pickupLat":12.9716,"pickupLng":77.5946,"dropoffAddress":"Koramangala","dropoffLat":12.9352,"dropoffLng":77.6245,"vehicleType":"SEDAN"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/trips", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"tripId"`) {
+		t.Fatalf("expected tripId in %s", rec.Body.String())
+	}
+}
+
+func TestTripHealthHTTP(t *testing.T) {
+	h, _ := newTripHandler()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health %d", rec.Code)
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	Port               string
+	HTTPPort           string
 	DatabaseDSN        string
 	KafkaBrokers       string
 	OSRMHost           string
@@ -21,6 +22,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:               getEnv("TRIP_SERVICE_PORT", "50051"),
+		HTTPPort:           getEnv("TRIP_SERVICE_HTTP_PORT", "8051"),
 		DatabaseDSN:        getEnv("POSTGRES_DSN", "postgres://cab_user:cab_password@localhost:5432/cab_booking_db?sslmode=disable"),
 		KafkaBrokers:       getEnv("KAFKA_BROKERS", "localhost:9092"),
 		OSRMHost:           getEnv("OSRM_HOST", "http://router.project-osrm.org"),

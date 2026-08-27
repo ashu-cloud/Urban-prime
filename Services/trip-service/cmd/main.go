@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -109,6 +110,17 @@ func main() {
 		}
 	}()
 
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%s", cfg.HTTPPort),
+		Handler: tripHandler.Routes(),
+	}
+	go func() {
+		logger.Info(ctx, "Trip Service HTTP REST adapter listening", "address", httpServer.Addr)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error(ctx, "HTTP server stopped unexpectedly", "error", err)
+		}
+	}()
+
 	// 7. GRACEFUL SHUTDOWN
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -116,6 +128,7 @@ func main() {
 
 	logger.Info(ctx, "Shutting down Trip Service gracefully...")
 	cancel()
+	_ = httpServer.Shutdown(context.Background())
 	grpcServer.GracefulStop()
 	logger.Info(ctx, "Trip Service stopped cleanly")
 }

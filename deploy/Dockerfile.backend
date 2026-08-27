@@ -11,6 +11,7 @@ COPY pkg/ ./pkg/
 COPY proto/ ./proto/
 COPY Services/ ./Services/
 COPY devserver/ ./devserver/
+COPY tests/live/ ./tests/live/
 
 # Start all 6 Go microservices via the devserver runner
 CMD ["go", "run", "./devserver/main.go"]
