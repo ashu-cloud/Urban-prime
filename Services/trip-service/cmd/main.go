@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -160,7 +161,10 @@ func initDatabase(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 
 func runMigrations(ctx context.Context, dsn string) {
 	logger.Info(ctx, "Running database migrations for trip-service...")
-	m, err := migrate.New("file://migrations", dsn)
+	cleanDSN := strings.ReplaceAll(dsn, "&channel_binding=require", "")
+	cleanDSN = strings.ReplaceAll(cleanDSN, "?channel_binding=require&", "?")
+	cleanDSN = strings.ReplaceAll(cleanDSN, "?channel_binding=require", "")
+	m, err := migrate.New("file://migrations", cleanDSN)
 	if err != nil {
 		logger.Warn(ctx, "Failed to initialize SQL migrations", "error", err)
 		return

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -157,12 +158,25 @@ func initDatabase(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 }
 
 func initRedis(ctx context.Context, addr string) *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		DialTimeout:  3 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	})
+	var opt *redis.Options
+	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
+		parsed, err := redis.ParseURL(addr)
+		if err != nil {
+			logger.Warn(ctx, "Failed to parse Redis URL", "addr", addr, "error", err)
+			return nil
+		}
+		opt = parsed
+	} else {
+		opt = &redis.Options{
+			Addr: addr,
+		}
+	}
+
+	opt.DialTimeout = 3 * time.Second
+	opt.ReadTimeout = 3 * time.Second
+	opt.WriteTimeout = 3 * time.Second
+
+	client := redis.NewClient(opt)
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -178,7 +192,10 @@ func initRedis(ctx context.Context, addr string) *redis.Client {
 
 func runMigrations(ctx context.Context, dsn string) {
 	logger.Info(ctx, "Running database migrations for driver-service...")
-	m, err := migrate.New("file://migrations", dsn)
+	cleanDSN := strings.ReplaceAll(dsn, "&channel_binding=require", "")
+	cleanDSN = strings.ReplaceAll(cleanDSN, "?channel_binding=require&", "?")
+	cleanDSN = strings.ReplaceAll(cleanDSN, "?channel_binding=require", "")
+	m, err := migrate.New("file://migrations", cleanDSN)
 	if err != nil {
 		logger.Warn(ctx, "Failed to initialize SQL migrations", "error", err)
 		return

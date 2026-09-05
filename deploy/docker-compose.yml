@@ -64,14 +64,20 @@ services:
     container_name: cab_centrifugo
     ports:
       - "8000:8000"
+    environment:
+      - CENTRIFUGO_TOKEN_HMAC_SECRET_KEY=${CENTRIFUGO_TOKEN_HMAC_SECRET_KEY}
+      - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY}
+      - CENTRIFUGO_ADMIN_PASSWORD=${CENTRIFUGO_ADMIN_PASSWORD}
+      - CENTRIFUGO_ADMIN_SECRET=${CENTRIFUGO_ADMIN_SECRET}
     volumes:
       - ./centrifugo/config.json:/centrifugo/config.json
     command: centrifugo --config=/centrifugo/config.json
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 15s
 
   # APISIX etcd
   etcd:
@@ -93,6 +99,8 @@ services:
       - "9080:9080"
       - "9090:9090"
       - "9180:9180"
+    environment:
+      - APISIX_ADMIN_KEY=${APISIX_ADMIN_KEY:-your_apisix_admin_key_here}
     volumes:
       - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml
 
@@ -117,7 +125,7 @@ services:
     environment:
       - POSTGRES_DSN=${POSTGRES_DSN:-postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable}
       - DATABASE_URL=${DATABASE_URL:-postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable}
-      - REDIS_ADDR=redis:6379
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
       - KAFKA_BROKERS=kafka:29092
       - CENTRIFUGO_URL=http://centrifugo:8000
       - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY}
@@ -125,6 +133,7 @@ services:
       - PAYMENT_SERVICE_ADDR=localhost:50054
       - DRIVER_SERVICE_ADDR=localhost:50052
       - JWT_SECRET=${JWT_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
     ports:
       - "8080:8080"
       - "50051:50051"
@@ -151,6 +160,10 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:9080}
+        - NEXT_PUBLIC_CENTRIFUGO_WS=${NEXT_PUBLIC_CENTRIFUGO_WS:-ws://localhost:8000/connection/websocket}
     container_name: cab_frontend
     ports:
       - "3000:3000"
@@ -158,6 +171,7 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:9080
       - NEXT_PUBLIC_CENTRIFUGO_WS=ws://localhost:8000/connection/websocket
+      - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN}
     depends_on:
       - apisix
       - centrifugo

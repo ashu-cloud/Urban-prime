@@ -1,33 +1,25 @@
 {
-  "v3_use_string_user_id": true,
   "token_hmac_secret_key": "${CENTRIFUGO_TOKEN_HMAC_SECRET_KEY}",
   "api_key": "${CENTRIFUGO_API_KEY}",
   "admin": true,
   "admin_password": "${CENTRIFUGO_ADMIN_PASSWORD}",
   "admin_secret": "${CENTRIFUGO_ADMIN_SECRET}",
+  "health": true,
   "namespaces": [
     {
       "name": "trip",
-      "publish": false,
-      "subscribe": true,
       "presence": true,
       "history_size": 10,
-      "history_ttl": "60s",
-      "recover": true
+      "history_ttl": "60s"
     },
     {
       "name": "tracking",
-      "publish": false,
-      "subscribe": true,
       "presence": false,
       "history_size": 5,
-      "history_ttl": "30s",
-      "recover": true
+      "history_ttl": "30s"
     },
     {
       "name": "driver",
-      "publish": false,
-      "subscribe": true,
       "presence": true,
       "history_size": 5,
       "history_ttl": "30s"

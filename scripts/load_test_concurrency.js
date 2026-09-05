@@ -18,12 +18,13 @@ export const options = {
 };
 
 export default function () {
-  const email = `conc.${__VU}@example.com`;
+  // unique per VU + iteration so no intentional duplicates
+  const email = `conc.${__VU}.${__ITER}.${Date.now()}@example.com`;
   const res = http.post(
     `${AUTH_URL}/auth/register`,
     JSON.stringify({
       email,
-      phone: `+1888${String(__VU).padStart(7, '0')}`,
+      phone: `+1888${String(__VU * 1000 + __ITER).padStart(7, '0')}`,
       password: 'Concurrent1',
       full_name: 'Concurrent User',
       role: 'RIDER',
@@ -32,7 +33,7 @@ export default function () {
   );
 
   check(res, {
-    'duplicate email not 500': (r) => r.status === 201 || r.status === 409 || r.status >= 500,
+    'register succeeded': (r) => r.status === 201,
   });
   sleep(0.05);
 }

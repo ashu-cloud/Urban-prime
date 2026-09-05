@@ -18,11 +18,7 @@ Write-Host "[2/3] Building & launching entire stack in Docker..." -ForegroundCol
 Write-Host "      (Runs all services in Docker - zero multiple firewall popups!)" -ForegroundColor Gray
 Write-Host ""
 
-try {
-    docker compose -f deploy/docker-compose.yml up --build -d
-} catch {
-    docker-compose -f deploy/docker-compose.yml up --build -d
-}
+docker compose up -d --build
 
 # 3. Open Browser after short initialization wait
 Write-Host ""

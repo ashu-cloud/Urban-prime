@@ -144,8 +144,8 @@ export default function DriverSignupPage() {
       {/* Top Header */}
       <header className="h-[72px] px-8 flex items-center justify-between border-b border-[#DCD9D9] bg-white">
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-[#008A5E] flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
-            <Compass className="w-5 h-5" />
+          <div className="w-10 h-10 flex items-center justify-center shadow-md shadow-emerald-500/20 rounded-xl overflow-hidden">
+            <img src="/urban-prime-logo.svg" alt="Urban Prime" className="w-full h-full object-contain" />
           </div>
           <div>
             <span className="font-extrabold text-xl tracking-tight text-[#1F1F1F]">

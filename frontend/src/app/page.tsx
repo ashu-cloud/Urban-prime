@@ -359,8 +359,8 @@ export default function Home() {
           
           {/* Brand Logo & Name */}
           <Link href="/" className="flex items-center gap-2.5 text-white font-medium text-sm tracking-tight hover:opacity-90 transition-opacity cursor-pointer">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#007AFF] to-blue-400 flex items-center justify-center shadow-sm shadow-blue-500/40">
-              <Building2 className="w-3.5 h-3.5 text-white" />
+            <div className="w-6 h-6 flex items-center justify-center shadow-sm shadow-blue-500/40 rounded-[6px] overflow-hidden">
+              <img src="/urban-prime-logo.svg" alt="Urban Prime" className="w-full h-full object-contain" />
             </div>
             <span className="font-semibold text-white tracking-tight">Urban Prime</span>
             
@@ -806,8 +806,8 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex flex-col gap-1 items-center md:items-start text-center md:text-left">
             <div className="font-semibold text-white text-sm flex items-center gap-2 tracking-tight">
-              <div className="w-5 h-5 rounded bg-slate-900 border border-white/10 flex items-center justify-center">
-                <Building2 className="w-3 h-3 text-white" />
+              <div className="w-5 h-5 rounded overflow-hidden flex items-center justify-center">
+                <img src="/urban-prime-logo.svg" alt="Urban Prime" className="w-full h-full object-contain" />
               </div>
               Urban Prime
             </div>

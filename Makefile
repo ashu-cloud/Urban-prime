@@ -1,77 +1,73 @@
-.PHONY: help dev up up-full down backend frontend restart status logs proto tidy build clean test test-load routes
+.PHONY: help start run stop down restart status logs dev backend frontend tidy build test test-load proto routes
+
+# Default target when running just 'make'
+.DEFAULT_GOAL := start
 
 help:
 	@echo ""
 	@echo "=========================================================="
-	@echo "  🚕 Urban Prime Mobility OS - Quick Make Commands"
+	@echo "  🚕 Urban Prime Mobility OS - Commands"
 	@echo "=========================================================="
 	@echo ""
-	@echo "  make dev        - 🚀 1-Command Dev: Starts Docker infra + all 6 Go services"
-	@echo "  make up         - Start Docker infra only (DB, Redis, Kafka, APISIX, Centrifugo)"
-	@echo "  make up-full    - Start infra + backend + frontend containers"
-	@echo "  make routes     - Register APISIX routes for /auth and /api/v1"
-	@echo "  make down       - Stop all Docker containers"
-	@echo "  make backend    - Run all 6 Go microservices concurrently with colored logs"
-	@echo "  make frontend   - Run Next.js frontend in local dev mode (npm run dev)"
-	@echo "  make restart    - Restart all Docker containers"
-	@echo "  make status     - View status & health of all containers"
-	@echo "  make logs       - Tail live container logs"
-	@echo "  make test       - Run unit, security, concurrency, health, and live probes"
-	@echo "  make test-load  - Run k6 load/security/concurrency tests (requires k6)"
-	@echo "  make proto      - Recompile Protobuf definitions"
-	@echo "  make tidy       - Run go mod tidy across all modules"
-	@echo "  make build      - Build all Go service binaries"
+	@echo "  make start (or make)  - 🚀 Start entire project (all services + frontend)"
+	@echo "  make stop             - 🛑 Stop entire project"
+	@echo "  make restart          - 🔄 Restart entire project"
+	@echo "  make status           - 📊 View container health & status"
+	@echo "  make logs             - 📜 View live logs from all services"
+	@echo "  make dev              - 💻 Local dev mode (Docker infra + Go backend + Next.js)"
+	@echo "  make test             - 🧪 Run all unit and integration tests"
+	@echo "  make tidy             - 🧹 Tidy all Go modules"
+	@echo "  make build            - 🔨 Compile all Go binaries"
 	@echo ""
 
-# 1-Command Full Dev Environment (infra in Docker, Go services on the host)
-dev: up routes
+# 1-Command: Start all services and frontend in Docker
+start:
+	@echo "🚀 Starting Urban Prime (all microservices + frontend)..."
+	docker compose up -d --build
 	@echo ""
-	@echo "⚡ Infrastructure is ready. Launching all 6 Go Microservices..."
-	@echo ""
+	@echo "✅ All services and frontend are running!"
+	@echo "   👉 Web App:        http://localhost:3000"
+	@echo "   👉 Rider Portal:   http://localhost:3000/rider"
+	@echo "   👉 Driver Cockpit: http://localhost:3000/driver"
+	@echo "   👉 APISIX Gateway: http://localhost:9080"
+	@echo "   👉 Jaeger Tracing: http://localhost:16686"
+
+run: start
+
+# 1-Command: Stop everything
+stop:
+	@echo "🛑 Stopping all Urban Prime containers..."
+	docker compose down
+
+down: stop
+
+# Restart everything
+restart:
+	@echo "🔄 Restarting all Urban Prime containers..."
+	docker compose restart
+
+# View running container status
+status:
+	docker compose ps
+
+# Tail live logs
+logs:
+	docker compose logs -f
+
+# Local development mode: Run infra in Docker, Go services + Next.js with hot-reload
+dev:
+	@echo "⚡ Starting Docker infrastructure..."
+	docker compose up -d postgres redis kafka centrifugo apisix jaeger
+	@echo "⚡ Launching Go Microservices..."
 	go run ./devserver/main.go
 
-# Start Docker Infrastructure only (so host `make backend` can bind 8080/50051+)
-up:
-	docker compose -f deploy/docker-compose.yml up -d
-
-# Start infrastructure plus containerized backend + frontend
-up-full:
-	docker compose -f deploy/docker-compose.yml --profile full up -d --build
-
-# Stop Docker Infrastructure
-down:
-	docker compose -f deploy/docker-compose.yml --profile full down
-
-# Restart Docker Infrastructure
-restart: down up
-
-# Register APISIX routes that match the frontend and k6 scripts
-routes:
-	powershell -ExecutionPolicy Bypass -File deploy/apisix/setup_routes.ps1
-
-# Run all 6 Go microservices in 1 terminal with color-coded live logs
-backend:
-	go run ./devserver/main.go
-
-# Run Next.js Frontend with Turbopack in local dev mode
+# Run frontend in local dev mode (npm run dev)
 frontend:
 	cd frontend && npm run dev
 
-# Show Docker Container Status
-status:
-	docker-compose -f deploy/docker-compose.yml ps
-
-# Tail Live Docker Container Logs
-logs:
-	docker-compose -f deploy/docker-compose.yml logs -f
-
-# Generate Protobuf Code
-proto:
-	protoc --go_out=proto/gen --go_opt=paths=source_relative \
-	       --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
-	       -I=proto proto/auth/v1/auth.proto proto/trip/v1/trip.proto \
-	       proto/driver/v1/driver.proto proto/location/v1/location.proto \
-	       proto/payment/v1/payment.proto
+# Run all 6 Go microservices on host
+backend:
+	go run ./devserver/main.go
 
 # Tidy all Go modules
 tidy:
@@ -85,6 +81,7 @@ tidy:
 	cd tests/live && go mod tidy
 	cd proto && go mod tidy
 	cd devserver && go mod tidy
+	go work sync
 
 # Build all Go service binaries into /bin
 build: tidy
@@ -95,6 +92,7 @@ build: tidy
 	cd Services/payment-service && go build -o bin/payment-service ./cmd
 	cd Services/notification-service && go build -o bin/notification-service ./cmd
 
+# Run tests
 test:
 	cd pkg && go test ./... -count=1
 	cd Services/auth-service && go test ./... -count=1
@@ -110,3 +108,10 @@ test-load:
 	k6 run scripts/load_test_core_flow.js
 	k6 run scripts/load_test_security.js
 	k6 run scripts/load_test_concurrency.js
+
+proto:
+	protoc --go_out=proto/gen --go_opt=paths=source_relative \
+	       --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
+	       -I=proto proto/auth/v1/auth.proto proto/trip/v1/trip.proto \
+	       proto/driver/v1/driver.proto proto/location/v1/location.proto \
+	       proto/payment/v1/payment.proto

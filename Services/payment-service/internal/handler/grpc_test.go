@@ -3,13 +3,16 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 
 	"github.com/cab-booking/payment-service/internal/domain"
 	"github.com/cab-booking/payment-service/internal/stripeclient"
 	paymentv1 "github.com/cab-booking/proto/gen/payment/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -156,3 +159,42 @@ func TestConcurrentAuthorizeHolds(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestPaymentGRPCNetworkCall(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	srv := grpc.NewServer()
+	h := NewPaymentHandler(newMemTxRepo(), stripeclient.NewClient("sk_test"))
+	paymentv1.RegisterPaymentServiceServer(srv, h)
+
+	go func() {
+		_ = srv.Serve(lis)
+	}()
+	defer srv.Stop()
+
+	conn, err := grpc.Dial(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := paymentv1.NewPaymentServiceClient(conn)
+	resp, err := client.AuthorizeHold(context.Background(), &paymentv1.AuthorizeHoldRequest{
+		TripId:          "trip-net",
+		RiderId:         "rider-net",
+		AmountCents:     1000,
+		Currency:        "USD",
+		PaymentMethodId: "pm_card_visa",
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeHold RPC failed: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("AuthorizeHold failed: %v", resp.ErrorMessage)
+	}
+}
+

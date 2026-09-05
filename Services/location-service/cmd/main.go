@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -104,13 +105,28 @@ func main() {
 // initRedis connects to Redis and validates the connection.
 // Returns nil (with a warning) if Redis is unavailable — service degrades gracefully.
 func initRedis(ctx context.Context, addr string) *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		DialTimeout:  3 * time.Second,
-		ReadTimeout:  2 * time.Second,
-		WriteTimeout: 2 * time.Second,
-		PoolSize:     50, // large pool — this service has HIGH write throughput
-	})
+	var opt *redis.Options
+	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
+		parsed, err := redis.ParseURL(addr)
+		if err != nil {
+			logger.Warn(ctx, "Failed to parse Redis URL", "addr", addr, "error", err)
+			return nil
+		}
+		opt = parsed
+	} else {
+		opt = &redis.Options{
+			Addr: addr,
+		}
+	}
+
+	opt.DialTimeout = 3 * time.Second
+	opt.ReadTimeout = 2 * time.Second
+	opt.WriteTimeout = 2 * time.Second
+	if opt.PoolSize == 0 {
+		opt.PoolSize = 50 // large pool — this service has HIGH write throughput
+	}
+
+	client := redis.NewClient(opt)
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

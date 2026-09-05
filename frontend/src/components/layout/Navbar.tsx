@@ -32,8 +32,8 @@ export default function Navbar({ activeTab = 'ride', onOpenActivity, onOpenHelp 
       {/* Brand Logo */}
       <div className="flex items-center gap-8">
         <Link href="/rider" className="flex items-center gap-2.5 group">
-          <div className="w-10 h-10 rounded-xl bg-[#276EF1] flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-            <Compass className="w-5 h-5" />
+          <div className="w-10 h-10 flex items-center justify-center group-hover:scale-105 transition-transform rounded-xl overflow-hidden shadow-md shadow-blue-500/20">
+            <img src="/urban-prime-logo.svg" alt="Urban Prime" className="w-full h-full object-contain" />
           </div>
           <div>
             <span className="font-extrabold text-xl tracking-tight text-[#1F1F1F]">URBAN<span className="text-[#276EF1]">PRIME</span></span>

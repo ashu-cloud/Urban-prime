@@ -113,13 +113,27 @@ We use Docker Compose to spin up the entire infrastructure and microservice mesh
    ```bash
    cp .env.example .env
    ```
-3. Start the infrastructure and backend services:
+3. Start the entire system (all microservices + Next.js frontend):
+
+   **Option 1: Using Make (Recommended for Git Bash / Linux / macOS)**
    ```bash
-   docker compose --profile full up -d
+   make start
    ```
-4. Verify services are healthy:
+
+   **Option 2: Using Docker Compose directly**
    ```bash
-   docker compose ps
+   docker compose up -d
+   ```
+
+   **Option 3: Using the Windows batch script**
+   ```cmd
+   .\start.bat
+   ```
+
+4. To view logs or stop:
+   ```bash
+   make logs    # or: docker compose logs -f
+   make stop    # or: docker compose down
    ```
 
 ## API Reference (gRPC)
