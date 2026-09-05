@@ -1,0 +1,142 @@
+# render.yaml — Render Infrastructure-as-Code
+# Docs: https://render.com/docs/blueprint-spec
+#
+# ONE-TIME SETUP before deploying:
+# 1. Create accounts (all free):
+#    - https://neon.tech           → Get POSTGRES_DSN
+#    - https://upstash.com         → Get REDIS_ADDR and Kafka broker/credentials
+#    - https://centrifugo.com      → Self-hosted on Render (see centrifugo service below)
+#
+# 2. Go to Render Dashboard → New → Blueprint → connect this repo
+# 3. Fill in the env var values from your accounts above
+#
+# IMPORTANT: Replace YOUR_GITHUB_USERNAME below with your GitHub username.
+
+services:
+  # ─── Auth Service ─────────────────────────────────────────────────
+  - type: web
+    name: urbanprime-auth
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/auth-service:latest
+    plan: free
+    envVars:
+      - key: AUTH_SERVICE_HTTP_PORT
+        value: "8080"
+      - key: AUTH_SERVICE_GRPC_PORT
+        value: "50056"
+      - key: POSTGRES_DSN
+        sync: false   # You will fill this in from Neon.tech
+      - key: JWT_SECRET
+        generateValue: true   # Render auto-generates a secure secret ✅
+
+  # ─── Trip Service ─────────────────────────────────────────────────
+  - type: web
+    name: urbanprime-trip
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/trip-service:latest
+    plan: free
+    envVars:
+      - key: TRIP_SERVICE_HTTP_PORT
+        value: "8051"
+      - key: TRIP_SERVICE_PORT
+        value: "50051"
+      - key: POSTGRES_DSN
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false   # From Upstash Kafka
+      - key: DRIVER_SERVICE_ADDR
+        fromService:
+          name: urbanprime-driver
+          type: web
+          property: host
+      - key: PAYMENT_SERVICE_ADDR
+        fromService:
+          name: urbanprime-payment
+          type: web
+          property: host
+
+  # ─── Driver Service ───────────────────────────────────────────────
+  - type: web
+    name: urbanprime-driver
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/driver-service:latest
+    plan: free
+    envVars:
+      - key: DRIVER_SERVICE_HTTP_PORT
+        value: "8052"
+      - key: DRIVER_SERVICE_PORT
+        value: "50052"
+      - key: POSTGRES_DSN
+        sync: false
+      - key: REDIS_ADDR
+        sync: false   # From Upstash Redis (format: rediss://...:port)
+      - key: KAFKA_BROKERS
+        sync: false
+
+  # ─── Location Service ─────────────────────────────────────────────
+  - type: web
+    name: urbanprime-location
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/location-service:latest
+    plan: free
+    envVars:
+      - key: LOCATION_SERVICE_HTTP_PORT
+        value: "8053"
+      - key: LOCATION_SERVICE_PORT
+        value: "50053"
+      - key: REDIS_ADDR
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+
+  # ─── Payment Service ──────────────────────────────────────────────
+  - type: web
+    name: urbanprime-payment
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/payment-service:latest
+    plan: free
+    envVars:
+      - key: PAYMENT_SERVICE_PORT
+        value: "50054"
+      - key: POSTGRES_DSN
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false   # Use Stripe test key: sk_test_...
+
+  # ─── Notification Service ─────────────────────────────────────────
+  - type: web
+    name: urbanprime-notification
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/notification-service:latest
+    plan: free
+    envVars:
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: CENTRIFUGO_URL
+        sync: false   # URL of your centrifugo Render service
+      - key: CENTRIFUGO_API_KEY
+        sync: false
+
+  # ─── Centrifugo WebSocket Engine ──────────────────────────────────
+  - type: web
+    name: urbanprime-centrifugo
+    runtime: image
+    image:
+      url: docker.io/centrifugo/centrifugo:v5
+    plan: free
+    envVars:
+      - key: CENTRIFUGO_TOKEN_HMAC_SECRET_KEY
+        generateValue: true
+      - key: CENTRIFUGO_API_KEY
+        generateValue: true
+      - key: CENTRIFUGO_ADMIN_PASSWORD
+        generateValue: true
+      - key: CENTRIFUGO_ADMIN_SECRET
+        generateValue: true
+    startCommand: centrifugo --config=/centrifugo/config.json
