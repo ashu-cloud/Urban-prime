@@ -1,10 +1,10 @@
 {
   "v3_use_string_user_id": true,
-  "token_hmac_secret_key": "my_secret_token_hmac_key",
-  "api_key": "my_secret_api_key",
+  "token_hmac_secret_key": "${CENTRIFUGO_TOKEN_HMAC_SECRET_KEY}",
+  "api_key": "${CENTRIFUGO_API_KEY}",
   "admin": true,
-  "admin_password": "admin",
-  "admin_secret": "my_admin_secret",
+  "admin_password": "${CENTRIFUGO_ADMIN_PASSWORD}",
+  "admin_secret": "${CENTRIFUGO_ADMIN_SECRET}",
   "namespaces": [
     {
       "name": "trip",

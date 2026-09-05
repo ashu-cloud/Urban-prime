@@ -20,7 +20,7 @@ func Load() *Config {
 		KafkaBrokers:     getEnv("KAFKA_BROKERS", "localhost:9092"),
 		KafkaGroupID:     getEnv("KAFKA_GROUP_ID", "notification-service"),
 		CentrifugoURL:    getEnv("CENTRIFUGO_URL", "http://localhost:8000"),
-		CentrifugoAPIKey: getEnv("CENTRIFUGO_API_KEY", "my_secret_api_key"),
+		CentrifugoAPIKey: getEnv("CENTRIFUGO_API_KEY", ""),
 	}
 }
 

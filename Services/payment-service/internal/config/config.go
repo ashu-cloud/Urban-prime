@@ -12,9 +12,8 @@ type Config struct {
 
 func Load() *Config {
 	port := firstNonEmpty(os.Getenv("PORT"), os.Getenv("PAYMENT_SERVICE_PORT"), "50054")
-	dbURL := firstNonEmpty(os.Getenv("DATABASE_URL"), os.Getenv("POSTGRES_DSN"),
-		"postgres://cab_user:cab_password@localhost:5432/cab_booking_db?sslmode=disable")
-	stripeKey := firstNonEmpty(os.Getenv("STRIPE_SECRET_KEY"), "sk_test_mock")
+	dbURL := firstNonEmpty(os.Getenv("DATABASE_URL"), os.Getenv("POSTGRES_DSN"), "")
+	stripeKey := firstNonEmpty(os.Getenv("STRIPE_SECRET_KEY"), "")
 
 	return &Config{
 		Port:            port,

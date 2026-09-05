@@ -20,8 +20,8 @@ func Load() *Config {
 	return &Config{
 		HTTPPort:          getEnv("AUTH_SERVICE_HTTP_PORT", "8080"),
 		GRPCPort:          getEnv("AUTH_SERVICE_GRPC_PORT", "50056"),
-		DatabaseDSN:       getEnv("POSTGRES_DSN", "postgres://cab_user:cab_password@localhost:5432/cab_booking_db?sslmode=disable"),
-		JWTSecret:         getEnv("JWT_SECRET", "super_secret_jwt_signing_key_change_in_production"),
+		DatabaseDSN:       getEnv("POSTGRES_DSN", ""),
+		JWTSecret:         getEnv("JWT_SECRET", ""),
 		JWTAccessTTLMin:   getEnvInt("JWT_ACCESS_TTL_MIN", 15),
 		JWTRefreshTTLDays: getEnvInt("JWT_REFRESH_TTL_DAYS", 7),
 	}

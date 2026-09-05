@@ -4,8 +4,8 @@ services:
     image: postgres:16-alpine
     container_name: cab_postgres
     environment:
-      POSTGRES_USER: cab_user
-      POSTGRES_PASSWORD: cab_password
+      POSTGRES_USER: ${POSTGRES_USER:-cab_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cab_password}
       POSTGRES_DB: cab_booking_db
     ports:
       - "5432:5432"
@@ -115,16 +115,16 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - POSTGRES_DSN=postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable
-      - DATABASE_URL=postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable
+      - POSTGRES_DSN=${POSTGRES_DSN:-postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable}
+      - DATABASE_URL=${DATABASE_URL:-postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable}
       - REDIS_ADDR=redis:6379
       - KAFKA_BROKERS=kafka:29092
       - CENTRIFUGO_URL=http://centrifugo:8000
-      - CENTRIFUGO_API_KEY=my_secret_api_key
+      - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY}
       - OSRM_HOST=http://router.project-osrm.org
       - PAYMENT_SERVICE_ADDR=localhost:50054
       - DRIVER_SERVICE_ADDR=localhost:50052
-      - JWT_SECRET=super_secret_jwt_signing_key_change_in_production
+      - JWT_SECRET=${JWT_SECRET}
     ports:
       - "8080:8080"
       - "50051:50051"
