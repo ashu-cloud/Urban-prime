@@ -125,7 +125,7 @@ export default function RiderSignupPage() {
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Alexander Vance"
+                  placeholder="e.g. John Doe"
                   className="w-full bg-[#FCF9F8] border border-[#DCD9D9] rounded-xl pl-10 pr-4 py-3 text-xs font-semibold text-[#1F1F1F] focus:outline-none focus:border-[#276EF1] focus:ring-2 focus:ring-blue-100 transition-all"
                 />
               </div>
@@ -142,7 +142,7 @@ export default function RiderSignupPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="alexander.vance@urbanprime.com"
+                  placeholder="e.g. john.doe@example.com"
                   className="w-full bg-[#FCF9F8] border border-[#DCD9D9] rounded-xl pl-10 pr-4 py-3 text-xs font-semibold text-[#1F1F1F] focus:outline-none focus:border-[#276EF1] focus:ring-2 focus:ring-blue-100 transition-all"
                 />
               </div>

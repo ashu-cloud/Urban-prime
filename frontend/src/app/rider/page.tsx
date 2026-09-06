@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/Navbar';
 import MapboxView, { MarkerLocation, RouteLegType } from '@/components/map/MapboxView';
 import { api, getStoredRiderSession, TripResponse } from '@/lib/api';
-import { fetchMapboxDirections } from '@/lib/directions';
-import { tripStore, PersistedTripState } from '@/lib/tripStore';
+import { fetchMapboxDirections, reverseGeocodeMapbox } from '@/lib/directions';
 import {
   realtimeBus,
   DriverLocationEvent,
@@ -185,71 +184,6 @@ export default function RiderPage() {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [submittedFeedback, setSubmittedFeedback] = useState<SubmittedFeedback | null>(null);
 
-  // 1. HYDRATE SINGLE SOURCE OF TRUTH ON MOUNT (SURVIVES REFRESH)
-  useEffect(() => {
-    const saved = tripStore.get();
-    if (saved && saved.status !== 'COMPLETED') {
-      setIsIdle(false);
-      setTripState(saved.status);
-      setPickupAddress(saved.pickupAddress);
-      setDropoffAddress(saved.dropoffAddress);
-      setPickupCoords({
-        lat: saved.pickupLat,
-        lng: saved.pickupLng,
-        label: `Pickup: ${saved.pickupAddress}`,
-        type: 'pickup',
-      });
-      setDropoffCoords({
-        lat: saved.dropoffLat,
-        lng: saved.dropoffLng,
-        label: `Dropoff: ${saved.dropoffAddress}`,
-        type: 'dropoff',
-      });
-      setGeneratedOtp(saved.otp);
-      setCurrentTrip({
-        tripId: saved.tripId,
-        riderId: saved.riderId,
-        status: saved.status,
-        fareAmount: saved.fareAmount,
-        currency: 'USD',
-        pickupLocation: { latitude: saved.pickupLat, longitude: saved.pickupLng, address: saved.pickupAddress },
-        dropoffLocation: { latitude: saved.dropoffLat, longitude: saved.dropoffLng, address: saved.dropoffAddress },
-        vehicleType: saved.vehicleType,
-        createdAt: new Date(saved.createdAt).toISOString(),
-      });
-
-      if (saved.driverId) {
-        const dLat = saved.driverLat || saved.pickupLat;
-        const dLng = saved.driverLng || saved.pickupLng;
-        const dObj = {
-          tripId: saved.tripId,
-          status: saved.status,
-          driverId: saved.driverId,
-          driverName: saved.driverName || 'Chauffeur Partner',
-          driverLat: dLat,
-          driverLng: dLng,
-          driverRating: saved.driverRating || 5.0,
-          vehicleModel: saved.vehicleModel || 'Executive Fleet Vehicle',
-          licensePlate: saved.licensePlate || 'NYC-PRIME',
-          otp: saved.otp,
-        };
-        setAssignedDriver(dObj);
-        setNearbyDrivers((prev) => [
-          {
-            id: saved.driverId!,
-            lat: dLat,
-            lng: dLng,
-            heading: saved.driverHeading || 45,
-            label: saved.driverName
-              ? `${saved.driverName} (${saved.vehicleModel || 'Fleet Vehicle'})`
-              : 'Chauffeur Partner',
-          },
-          ...prev.filter((d) => d.id !== saved.driverId),
-        ]);
-      }
-    }
-  }, []);
-
   // Calculate real road driving distance and duration whenever pickup/dropoff moves
   useEffect(() => {
     let isMounted = true;
@@ -276,8 +210,8 @@ export default function RiderPage() {
     };
   }, [pickupCoords?.lat, pickupCoords?.lng, dropoffCoords?.lat, dropoffCoords?.lng]);
 
-  // Map Click Handler for Precision Pin Drop
-  const handleMapClick = (coords: { lat: number; lng: number }) => {
+  // Map Click Handler for Precision Pin Drop with Reverse Geocoding
+  const handleMapClick = async (coords: { lat: number; lng: number }) => {
     if (activePinMode === 'PICKUP' || (!pickupCoords && !activePinMode)) {
       setPickupCoords({
         lat: coords.lat,
@@ -285,8 +219,11 @@ export default function RiderPage() {
         label: `Pickup (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
         type: 'pickup',
       });
-      setPickupAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+      setPickupAddress('Locating address...');
       setActivePinMode(null);
+      const addr = await reverseGeocodeMapbox(coords.lng, coords.lat);
+      setPickupAddress(addr);
+      setPickupCoords((prev) => (prev ? { ...prev, label: `Pickup: ${addr}` } : prev));
     } else if (activePinMode === 'DROPOFF' || (pickupCoords && !dropoffCoords && !activePinMode)) {
       setDropoffCoords({
         lat: coords.lat,
@@ -294,30 +231,39 @@ export default function RiderPage() {
         label: `Dropoff (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
         type: 'dropoff',
       });
-      setDropoffAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+      setDropoffAddress('Locating address...');
       setActivePinMode(null);
+      const addr = await reverseGeocodeMapbox(coords.lng, coords.lat);
+      setDropoffAddress(addr);
+      setDropoffCoords((prev) => (prev ? { ...prev, label: `Dropoff: ${addr}` } : prev));
     }
   };
 
-  // Draggable Marker Handlers
-  const handlePickupDrag = (coords: { lat: number; lng: number }) => {
+  // Draggable Marker Handlers with Reverse Geocoding
+  const handlePickupDrag = async (coords: { lat: number; lng: number }) => {
     setPickupCoords({
       lat: coords.lat,
       lng: coords.lng,
       label: `Pickup (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
       type: 'pickup',
     });
-    setPickupAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+    setPickupAddress('Locating address...');
+    const addr = await reverseGeocodeMapbox(coords.lng, coords.lat);
+    setPickupAddress(addr);
+    setPickupCoords((prev) => (prev ? { ...prev, label: `Pickup: ${addr}` } : prev));
   };
 
-  const handleDropoffDrag = (coords: { lat: number; lng: number }) => {
+  const handleDropoffDrag = async (coords: { lat: number; lng: number }) => {
     setDropoffCoords({
       lat: coords.lat,
       lng: coords.lng,
       label: `Dropoff (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`,
       type: 'dropoff',
     });
-    setDropoffAddress(`Pin Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+    setDropoffAddress('Locating address...');
+    const addr = await reverseGeocodeMapbox(coords.lng, coords.lat);
+    setDropoffAddress(addr);
+    setDropoffCoords((prev) => (prev ? { ...prev, label: `Dropoff: ${addr}` } : prev));
   };
 
   // Subscribe to real-time Driver location telemetry and Trip status events
@@ -333,16 +279,6 @@ export default function RiderPage() {
           label: loc.driverName || 'Driver Partner',
         };
 
-        // Update single source of truth store
-        const active = tripStore.get();
-        if (active && active.driverId === loc.driverId) {
-          tripStore.updateStatus(active.status, {
-            driverLat: loc.latitude,
-            driverLng: loc.longitude,
-            driverHeading: loc.heading,
-          });
-        }
-
         return [updatedDriver, ...filtered];
       });
     });
@@ -357,22 +293,10 @@ export default function RiderPage() {
         setIsIdle(false);
         setTripState(event.status);
         setAssignedDriver((prev) => ({ ...prev, ...event }));
-
-        // Persist to Single Source of Truth
-        tripStore.updateStatus(event.status, {
-          driverId: event.driverId,
-          driverName: event.driverName,
-          driverRating: event.driverRating,
-          vehicleModel: event.vehicleModel,
-          licensePlate: event.licensePlate,
-          driverLat: event.driverLat,
-          driverLng: event.driverLng,
-        });
       } else if (event.status === 'COMPLETED') {
         setIsIdle(false);
         setTripState('COMPLETED');
         setShowRatingModal(true);
-        tripStore.updateStatus('COMPLETED');
       }
     });
 
@@ -400,7 +324,7 @@ export default function RiderPage() {
         lat: assignedDriver.driverLat || (pickupCoords ? pickupCoords.lat : 40.7484),
         lng: assignedDriver.driverLng || (pickupCoords ? pickupCoords.lng : -73.9857),
         heading: 45,
-        label: assignedDriver.driverName || 'Marcus Sterling (Tesla Model S)',
+        label: assignedDriver.driverName || 'Driver (Tesla Model S)',
       }
     : null;
 
@@ -458,31 +382,6 @@ export default function RiderPage() {
     setSubmittedFeedback(null);
     setTripError(null);
 
-    const newTripId = `trip_${Date.now()}`;
-
-    // 1. SAVE PERSISTENT SINGLE SOURCE OF TRUTH
-    const feeBreakdown = calculatePlatformFee(finalFare);
-    const initialTripState: PersistedTripState = {
-      tripId: newTripId,
-      riderId: currentSession.userId || 'rid_001',
-      riderName: currentSession.name || 'Alexander Vance',
-      status: 'MATCHING',
-      pickupAddress,
-      pickupLat: pickupCoords.lat,
-      pickupLng: pickupCoords.lng,
-      dropoffAddress,
-      dropoffLat: dropoffCoords.lat,
-      dropoffLng: dropoffCoords.lng,
-      vehicleType: selectedTier,
-      fareAmount: finalFare,
-      platformFee: feeBreakdown.platformFee,
-      driverNetFare: feeBreakdown.driverNetFare,
-      feePercentage: feeBreakdown.feePercentage,
-      otp: otp,
-      createdAt: Date.now(),
-    };
-    tripStore.save(initialTripState);
-
     try {
       const resp = await api.createTrip({
         riderId: session?.userId || 'rid_001',
@@ -494,10 +393,10 @@ export default function RiderPage() {
         dropoffLng: dropoffCoords.lng,
         vehicleType: selectedTier,
         fareAmount: finalFare,
+        paymentMethodId: 'pm_card_visa',
       });
       setCurrentTrip(resp);
     } catch (err: any) {
-      tripStore.clear();
       setIsIdle(true);
       setTripState('MATCHING');
       setTripError(err.message || 'Failed to request trip. Our dispatch servers are currently busy.');
@@ -514,7 +413,6 @@ export default function RiderPage() {
     setActivePinMode(null);
     setSubmittedFeedback(null);
     setTripError(null);
-    tripStore.clear();
     setPickupAddress('');
     setDropoffAddress('');
     setPickupCoords(null);
@@ -538,7 +436,7 @@ export default function RiderPage() {
       tip: tipAmount,
       compliments: selectedCompliments,
       totalFare: totalAmount,
-      driverName: assignedDriver?.driverName || 'Marcus Sterling',
+      driverName: assignedDriver?.driverName || 'Driver',
       vehicleModel: assignedDriver?.vehicleModel || 'Tesla Model S (Obsidian Black)',
       pickupAddress,
       dropoffAddress,
@@ -588,7 +486,7 @@ export default function RiderPage() {
       tripId: completedSummary.tripId,
       status: 'COMPLETED',
       driverId: assignedDriver?.driverId || 'drv_901',
-      driverName: session?.name || 'Alexander Vance',
+      driverName: session?.name || 'Rider',
       rating,
       tipAmount,
       fareAmount: baseFare,
@@ -596,7 +494,6 @@ export default function RiderPage() {
 
     setShowRatingModal(false);
     setTripState('COMPLETED');
-    tripStore.clear();
   };
 
   const toggleCompliment = (badge: string) => {
@@ -607,8 +504,9 @@ export default function RiderPage() {
     }
   };
 
+  const hasRoute = Boolean(pickupCoords && dropoffCoords && drivingDistanceKm > 0);
   const activeTierObj = VEHICLE_TIERS.find((t) => t.id === selectedTier)!;
-  const currentFare = getTierPrice(activeTierObj);
+  const currentFare = hasRoute ? getTierPrice(activeTierObj) : 0;
 
   let activeLeg: RouteLegType = 'NONE';
   if (!isIdle && !submittedFeedback) {
@@ -984,17 +882,25 @@ export default function RiderPage() {
                                 )}
                               </div>
                               <p className="text-[11px] text-slate-500">{tier.subtitle}</p>
-                              <p className="text-[10px] font-semibold text-[#276EF1] mt-0.5 flex items-center gap-1">
-                                <Clock className="w-2.5 h-2.5" /> {drivingDurationText} arrival
-                              </p>
+                              {drivingDurationText ? (
+                                <p className="text-[10px] font-semibold text-[#276EF1] mt-0.5 flex items-center gap-1">
+                                  <Clock className="w-2.5 h-2.5" /> {drivingDurationText} arrival
+                                </p>
+                              ) : (
+                                <p className="text-[10px] font-medium text-slate-400 mt-0.5">
+                                  Select locations on map
+                                </p>
+                              )}
                             </div>
                           </div>
 
                           <div className="text-right">
                             <span className="text-base font-extrabold text-[#1F1F1F]">
-                              ${price.toFixed(2)}
+                              {hasRoute ? `$${price.toFixed(2)}` : '---'}
                             </span>
-                            <span className="block text-[10px] text-slate-400 font-medium">Est. Total</span>
+                            <span className="block text-[10px] text-slate-400 font-medium">
+                              {hasRoute ? 'Est. Total' : 'Select route'}
+                            </span>
                           </div>
                         </div>
                       );

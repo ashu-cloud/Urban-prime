@@ -5,24 +5,28 @@
   "admin_password": "${CENTRIFUGO_ADMIN_PASSWORD}",
   "admin_secret": "${CENTRIFUGO_ADMIN_SECRET}",
   "health": true,
+  "allow_anonymous_connect_without_token": true,
   "namespaces": [
     {
       "name": "trip",
       "presence": true,
       "history_size": 10,
-      "history_ttl": "60s"
+      "history_ttl": "60s",
+      "allow_subscribe_for_client": true
     },
     {
       "name": "tracking",
       "presence": false,
       "history_size": 5,
-      "history_ttl": "30s"
+      "history_ttl": "30s",
+      "allow_subscribe_for_client": true
     },
     {
       "name": "driver",
       "presence": true,
       "history_size": 5,
-      "history_ttl": "30s"
+      "history_ttl": "30s",
+      "allow_subscribe_for_client": true
     }
   ]
 }

@@ -64,3 +64,32 @@ export function calculateRoadHeading(
   let brng = (Math.atan2(y, x) * 180) / Math.PI;
   return Math.round((brng + 360) % 360);
 }
+
+/**
+ * Mapbox Geocoding API for reverse geocoding coordinates into human-readable street addresses.
+ */
+export async function reverseGeocodeMapbox(
+  lng: number,
+  lat: number,
+  token?: string
+): Promise<string> {
+  const mapboxToken = token || process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  if (!mapboxToken || mapboxToken.includes('yourusername')) return fallback;
+
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=address,poi,neighborhood,locality&access_token=${mapboxToken}`;
+    const res = await fetch(url);
+    if (!res.ok) return fallback;
+
+    const data = await res.json();
+    if (data.features && data.features.length > 0) {
+      return data.features[0].place_name || data.features[0].text || fallback;
+    }
+    return fallback;
+  } catch (err) {
+    console.error('Failed to reverse geocode with Mapbox:', err);
+    return fallback;
+  }
+}
+

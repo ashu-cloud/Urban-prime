@@ -16,6 +16,13 @@ echo.
 docker compose up -d --build
 
 echo.
+echo [*] Waiting 10 seconds for APISIX API Gateway to initialize...
+timeout /t 10 >nul
+
+echo [*] Dynamically wiring microservice routes to APISIX Gateway...
+powershell -ExecutionPolicy Bypass -File "deploy\apisix\setup_routes.ps1"
+
+echo.
 echo [*] Opening Urban Prime at http://localhost:3000...
 timeout /t 5 >nul
 start http://localhost:3000

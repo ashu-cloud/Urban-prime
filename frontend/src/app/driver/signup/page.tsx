@@ -122,22 +122,6 @@ export default function DriverSignupPage() {
     }
   };
 
-  // Quick Autofill for Fast Demo Review
-  const handleQuickDemoFill = () => {
-    setFormData({
-      fullName: 'Marcus Sterling',
-      email: 'marcus.sterling@driver.urbanprime.com',
-      phone: '+1 (555) 894-2091',
-      password: 'ChauffeurExecutive2026!',
-      vehicleMake: 'Tesla',
-      vehicleModel: 'Model S',
-      vehicleYear: '2025',
-      vehicleColor: 'Obsidian Black',
-      vehiclePlate: 'NY-7890',
-      vehicleType: 'PREMIUM',
-      licenseNumber: 'CDL-NY-8947291',
-    });
-  };
 
   return (
     <div className="min-h-screen bg-[#FCF9F8] flex flex-col justify-between select-none">
@@ -158,14 +142,7 @@ export default function DriverSignupPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleQuickDemoFill}
-            className="px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-[#008A5E] border border-emerald-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Auto-Fill Demo
-          </button>
+
           <Link
             href="/driver/login"
             className="text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"

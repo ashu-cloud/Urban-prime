@@ -44,11 +44,6 @@ export default function RiderLoginPage() {
     }
   };
 
-  const setDemoRider = () => {
-    setEmail('alexander.vance@urbanprime.com');
-    setPassword('••••••••••••');
-    setErrorMessage('');
-  };
 
   return (
     <div className="min-h-screen bg-[#FCF9F8] flex flex-col justify-between select-none">
@@ -112,20 +107,6 @@ export default function RiderLoginPage() {
             </div>
           )}
 
-          {/* Quick Demo Autofill */}
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#276EF1]" />
-              <span className="font-bold text-[#276EF1]">Demo: Alexander Vance</span>
-            </div>
-            <button
-              type="button"
-              onClick={setDemoRider}
-              className="text-[11px] font-extrabold text-[#276EF1] hover:underline cursor-pointer"
-            >
-              Autofill
-            </button>
-          </div>
 
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-bold text-red-700">

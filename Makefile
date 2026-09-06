@@ -24,6 +24,10 @@ help:
 start:
 	@echo "🚀 Starting Urban Prime (all microservices + frontend)..."
 	docker compose up -d --build
+	@echo "⏳ Waiting 10s for APISIX to boot before configuring routes..."
+	@sleep 10 || timeout /t 10 >nul
+	@echo "🔌 Wiring APISIX microservice routes..."
+	@bash deploy/apisix/setup_routes.sh || powershell -ExecutionPolicy Bypass -File deploy\apisix\setup_routes.ps1
 	@echo ""
 	@echo "✅ All services and frontend are running!"
 	@echo "   👉 Web App:        http://localhost:3000"

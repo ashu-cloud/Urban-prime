@@ -217,3 +217,9 @@ func mapProtoStatusToDomain(s driverv1.DriverStatus) domain.DriverStatus {
 		return domain.StatusOffline
 	}
 }
+
+// RespondToDispatch forwards driver's acceptance or decline to Redis PubSub
+func (h *DriverHandler) RespondToDispatch(ctx context.Context, driverID, tripID string, accepted bool) error {
+	return h.geoService.PublishDriverResponse(ctx, driverID, tripID, accepted)
+}
+

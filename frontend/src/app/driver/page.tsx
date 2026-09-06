@@ -4,8 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import MapboxView, { MarkerLocation, RouteLegType } from '@/components/map/MapboxView';
-import { getStoredDriverSession, clearStoredDriverSession } from '@/lib/api';
-import { tripStore } from '@/lib/tripStore';
+import { api, getStoredDriverSession, clearStoredDriverSession } from '@/lib/api';
 import { fetchMapboxDirections, calculateRoadHeading } from '@/lib/directions';
 import {
   realtimeBus,
@@ -66,7 +65,7 @@ export default function DriverPage() {
     lat: 40.7440,
     lng: -73.9900,
     heading: 45,
-    label: 'Marcus Sterling (Tesla Model S)',
+    label: 'Driver (Tesla Model S)',
   });
 
   // Active Dispatch Modal State
@@ -175,47 +174,7 @@ export default function DriverPage() {
     }
   }, [router]);
 
-  // 1. HYDRATE SINGLE SOURCE OF TRUTH ON MOUNT (SURVIVES REFRESH)
-  useEffect(() => {
-    const saved = tripStore.get();
-    if (saved && saved.status !== 'COMPLETED') {
-      const offer: DispatchOfferEvent = {
-        tripId: saved.tripId,
-        riderId: saved.riderId,
-        riderName: saved.riderName,
-        pickupAddress: saved.pickupAddress,
-        dropoffAddress: saved.dropoffAddress,
-        pickupLat: saved.pickupLat,
-        pickupLng: saved.pickupLng,
-        dropoffLat: saved.dropoffLat,
-        dropoffLng: saved.dropoffLng,
-        fareAmount: saved.fareAmount,
-        platformFee: saved.platformFee,
-        driverNetFare: saved.driverNetFare,
-        feePercentage: saved.feePercentage,
-        expiresInSeconds: 15,
-        otp: saved.otp,
-      };
 
-      if (saved.status === 'MATCHING') {
-        setActiveOffer(offer);
-      } else {
-        setActiveTrip(offer);
-        setTripStage(saved.status);
-        if (saved.status === 'IN_TRANSIT' || saved.status === 'ARRIVED_AT_DESTINATION') {
-          setIsOtpVerified(true);
-        }
-        if (saved.driverLat && saved.driverLng) {
-          setDriverPos({
-            lat: saved.driverLat,
-            lng: saved.driverLng,
-            heading: saved.driverHeading || 45,
-            label: 'Marcus Sterling (Tesla Model S)',
-          });
-        }
-      }
-    }
-  }, []);
 
   // Fetch real road polyline whenever trip stage changes to navigation
   useEffect(() => {
@@ -282,7 +241,7 @@ export default function DriverPage() {
               lat: nextCoord[1],
               lng: nextCoord[0],
               heading: roadHeading,
-              label: session?.name ? `${session.name} (${session.vehicleModel || 'Tesla Model S'})` : 'Marcus Sterling',
+              label: session?.name ? `${session.name} (${session.vehicleModel || 'Tesla Model S'})` : 'Driver',
             };
           }
         } else {
@@ -301,23 +260,13 @@ export default function DriverPage() {
         // Publish live GPS ping to Centrifugo WebSocket
         realtimeBus.publishDriverLocation({
           driverId: session?.userId || 'drv_901',
-          driverName: session?.name || 'Marcus Sterling',
+          driverName: session?.name || 'Driver',
           vehicleType: session?.vehicleType || 'PREMIUM',
           latitude: newPos.lat,
           longitude: newPos.lng,
           heading: newPos.heading ?? 45,
           isAvailable: !activeTrip,
         });
-
-        // Sync with single source of truth
-        const active = tripStore.get();
-        if (active) {
-          tripStore.updateStatus(active.status, {
-            driverLat: newPos.lat,
-            driverLng: newPos.lng,
-            driverHeading: newPos.heading,
-          });
-        }
 
         return newPos;
       });
@@ -335,9 +284,10 @@ export default function DriverPage() {
       ? session.rating.toFixed(2)
       : '5.00';
 
-  // Subscribe to Incoming Dispatch Offers
+  // Subscribe to Incoming Dispatch Offers for THIS Driver
   useEffect(() => {
-    const unsubscribe = realtimeBus.onDispatchOffer((offer: DispatchOfferEvent) => {
+    if (!session?.userId) return;
+    const unsubscribe = realtimeBus.onDispatchOffer(session.userId, (offer: DispatchOfferEvent) => {
       if (isOnline && !activeTrip) {
         setActiveOffer(offer);
         setSecondsRemaining(offer.expiresInSeconds || 15);
@@ -345,7 +295,7 @@ export default function DriverPage() {
     });
 
     return () => unsubscribe();
-  }, [isOnline, activeTrip]);
+  }, [isOnline, activeTrip, session?.userId]);
 
   // Listen for real-time tip payments & feedback from rider
   useEffect(() => {
@@ -401,7 +351,7 @@ export default function DriverPage() {
             return updated;
           });
 
-          setTipToast({ amount: event.tipAmount, riderName: event.driverName || 'Alexander Vance' });
+          setTipToast({ amount: event.tipAmount, riderName: event.driverName || 'Rider' });
           setTimeout(() => setTipToast(null), 6000);
         }
       }
@@ -462,12 +412,11 @@ export default function DriverPage() {
     if (activeTrip && tripStage === 'ACCEPTED_EN_ROUTE_PICKUP' && distanceToPickup !== null) {
       if (distanceToPickup <= 20) {
         setTripStage('ARRIVED_AT_PICKUP');
-        tripStore.updateStatus('ARRIVED_AT_PICKUP');
         realtimeBus.publishTripStatus({
           tripId: activeTrip.tripId,
           status: 'ARRIVED_AT_PICKUP',
           driverId: session?.userId || 'drv_901',
-          driverName: session?.name || 'Marcus Sterling',
+          driverName: session?.name || 'Driver',
           distanceMeters: distanceToPickup,
         });
       }
@@ -479,7 +428,6 @@ export default function DriverPage() {
     if (activeTrip && tripStage === 'IN_TRANSIT' && distanceToDropoff !== null) {
       if (distanceToDropoff <= 20) {
         setTripStage('ARRIVED_AT_DESTINATION');
-        tripStore.updateStatus('ARRIVED_AT_DESTINATION');
         realtimeBus.publishTripStatus({
           tripId: activeTrip.tripId,
           status: 'ARRIVED_AT_DESTINATION',
@@ -491,7 +439,7 @@ export default function DriverPage() {
   }, [activeTrip, tripStage, distanceToDropoff, session]);
 
   // 1. Accept Dispatch Action
-  const handleAcceptOffer = () => {
+  const handleAcceptOffer = async () => {
     if (!activeOffer) return;
     const accepted = activeOffer;
     const feeBreakdown = calculatePlatformFee(accepted.fareAmount, accepted.tipAmount || 0);
@@ -533,28 +481,22 @@ export default function DriverPage() {
       driverNetFare: feeBreakdown.driverNetFare,
     });
 
-    // Update Persistent Single Source of Truth
-    tripStore.updateStatus('ACCEPTED_EN_ROUTE_PICKUP', {
-      driverId: session?.userId || 'drv_901',
-      driverName: driverDisplayName,
-      driverRating: session?.rating || 5.0,
-      vehicleModel: session?.vehicleModel || 'Tesla Model S (Obsidian Black)',
-      licensePlate: session?.vehiclePlate || 'NY-7890',
-      driverLat: driverPos.lat,
-      driverLng: driverPos.lng,
-      pickupAddress: accepted.pickupAddress,
-      pickupLat: accepted.pickupLat,
-      pickupLng: accepted.pickupLng,
-      dropoffAddress: accepted.dropoffAddress,
-      dropoffLat: accepted.dropoffLat,
-      dropoffLng: accepted.dropoffLng,
-      fareAmount: accepted.fareAmount,
-      platformFee: feeBreakdown.platformFee,
-      driverNetFare: feeBreakdown.driverNetFare,
-    });
+    // Notify backend driver service to unblock dispatch loop
+    try {
+      await api.respondToDispatch(session?.userId || 'drv_901', accepted.tripId, true);
+    } catch (e) {
+      console.warn('Failed to notify driver-service of acceptance:', e);
+    }
   };
 
-  const handleDeclineOffer = () => {
+  const handleDeclineOffer = async () => {
+    if (activeOffer) {
+      try {
+        await api.respondToDispatch(session?.userId || 'drv_901', activeOffer.tripId, false);
+      } catch (e) {
+        console.warn('Failed to notify driver-service of decline:', e);
+      }
+    }
     setActiveOffer(null);
   };
 
@@ -569,10 +511,6 @@ export default function DriverPage() {
       label,
     });
     setTripStage('ARRIVED_AT_PICKUP');
-    tripStore.updateStatus('ARRIVED_AT_PICKUP', {
-      driverLat: activeTrip.pickupLat + 0.0001,
-      driverLng: activeTrip.pickupLng + 0.0001,
-    });
     realtimeBus.publishTripStatus({
       tripId: activeTrip.tripId,
       status: 'ARRIVED_AT_PICKUP',
@@ -593,10 +531,6 @@ export default function DriverPage() {
       label,
     });
     setTripStage('ARRIVED_AT_DESTINATION');
-    tripStore.updateStatus('ARRIVED_AT_DESTINATION', {
-      driverLat: activeTrip.dropoffLat + 0.0001,
-      driverLng: activeTrip.dropoffLng + 0.0001,
-    });
     realtimeBus.publishTripStatus({
       tripId: activeTrip.tripId,
       status: 'ARRIVED_AT_DESTINATION',
@@ -633,14 +567,13 @@ export default function DriverPage() {
       setIsOtpVerified(true);
       setOtpError(false);
       setTripStage('IN_TRANSIT');
-      tripStore.updateStatus('IN_TRANSIT');
 
       // Publish In-Transit status over WebSocket mesh
       realtimeBus.publishTripStatus({
         tripId: activeTrip.tripId,
         status: 'IN_TRANSIT',
         driverId: session?.userId || 'drv_901',
-        driverName: session?.name || 'Marcus Sterling',
+        driverName: session?.name || 'Driver',
         etaMinutes: 8,
       });
     } else {
@@ -661,8 +594,6 @@ export default function DriverPage() {
       platformFee: feeBreakdown.platformFee,
       driverNetFare: feeBreakdown.driverNetFare,
     });
-
-    tripStore.updateStatus('COMPLETED');
     
     // Only Net Driver Fare is credited to the driver wallet (Platform fee is retained)
     const earnedAmount = feeBreakdown.driverNetFare;
@@ -788,7 +719,7 @@ export default function DriverPage() {
               </div>
               <div className="flex-1 overflow-hidden">
                 <h3 className="text-sm font-extrabold text-[#1F1F1F] truncate">
-                  {session?.name || 'Marcus Sterling'}
+                  {session?.name || 'Driver'}
                 </h3>
                 <p className="text-xs text-slate-500 truncate">
                   {session?.vehicleModel || 'Tesla Model S (Obsidian Black)'}

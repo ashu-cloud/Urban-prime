@@ -33,11 +33,6 @@ export default function DriverLoginPage() {
     }
   };
 
-  const setDemoDriver = () => {
-    setEmail('marcus.sterling@driver.urbanprime.com');
-    setPassword('••••••••••••');
-    setErrorMessage('');
-  };
 
   return (
     <div className="min-h-screen bg-[#FCF9F8] flex flex-col justify-between select-none">
@@ -77,20 +72,6 @@ export default function DriverLoginPage() {
             <p className="text-xs text-slate-500">Sign in to access real-time high-value ride dispatches</p>
           </div>
 
-          {/* Quick Demo Autofill */}
-          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#008A5E]" />
-              <span className="font-bold text-[#008A5E]">Demo: Marcus Sterling (5.0★)</span>
-            </div>
-            <button
-              type="button"
-              onClick={setDemoDriver}
-              className="text-[11px] font-extrabold text-[#008A5E] hover:underline cursor-pointer"
-            >
-              Autofill
-            </button>
-          </div>
 
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-bold text-red-700">

@@ -193,4 +193,22 @@ func (k *KafkaConsumer) handleMatchEvent(ctx context.Context, data []byte) {
 	}
 
 	k.centrifugo.PublishTripEvent(ctx, event.TripID, fmt.Sprintf("MATCH_%s", event.EventType), payload)
+
+	// Direct real-time dispatch prompt to the specific driver's channel
+	if event.EventType == "OFFERED" && event.DriverID != "" {
+		driverChannel := fmt.Sprintf("driver#%s", event.DriverID)
+		dispatchOfferPayload := map[string]interface{}{
+			"type":               "DISPATCH_OFFER",
+			"event_type":         "DISPATCH_OFFER",
+			"trip_id":            event.TripID,
+			"driver_id":          event.DriverID,
+			"expires_in_seconds": 15,
+			"timestamp":          time.Now().UnixMilli(),
+		}
+		if err := k.centrifugo.Publish(ctx, driverChannel, dispatchOfferPayload); err != nil {
+			logger.Warn(ctx, "Failed to publish dispatch offer to driver Centrifugo channel", "driver_id", event.DriverID, "error", err)
+		} else {
+			logger.Info(ctx, "Published dispatch offer to driver Centrifugo channel", "channel", driverChannel, "trip_id", event.TripID)
+		}
+	}
 }

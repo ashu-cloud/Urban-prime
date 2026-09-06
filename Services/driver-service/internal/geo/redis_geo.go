@@ -20,16 +20,18 @@ const (
 // In-memory Redis Geo (`GEOADD`, `GEOSEARCH`) delivers sub-millisecond query performance (~1-2ms),
 // making it capable of scaling to 100,000+ concurrent active drivers!
 type GeoService struct {
-	client *redis.Client // Official go-redis client instance
-	mu     sync.Mutex
-	locks  map[string]string
+	client       *redis.Client // Official go-redis client instance
+	mu           sync.Mutex
+	locks        map[string]string
+	pendingChans map[string]chan bool
 }
 
 // NewGeoService constructs GeoService instance
 func NewGeoService(client *redis.Client) *GeoService {
 	return &GeoService{
-		client: client,
-		locks:  make(map[string]string),
+		client:       client,
+		locks:        make(map[string]string),
+		pendingChans: make(map[string]chan bool),
 	}
 }
 
@@ -139,3 +141,74 @@ func (g *GeoService) ReleaseDispatchLock(ctx context.Context, driverID string) e
 	_ = g.client.Del(ctx, lockKey).Err()
 	return nil
 }
+
+// WaitForDriverResponse blocks until the driver responds with an ACCEPT/DECLINE via Redis PubSub or times out
+func (g *GeoService) WaitForDriverResponse(ctx context.Context, driverID, tripID string, timeout time.Duration) bool {
+	if g.client == nil {
+		g.mu.Lock()
+		respCh := make(chan bool, 1)
+		g.pendingChans[driverID] = respCh
+		g.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(timeout):
+			g.mu.Lock()
+			delete(g.pendingChans, driverID)
+			g.mu.Unlock()
+			return false
+		case res := <-respCh:
+			return res
+		}
+	}
+
+	channel := fmt.Sprintf("dispatch:response:%s", driverID)
+	pubsub := g.client.Subscribe(ctx, channel)
+	defer pubsub.Close()
+
+	ch := pubsub.Channel()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
+		case msg, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if msg.Payload == "ACCEPT" || msg.Payload == "ACCEPTED" {
+				return true
+			}
+			return false
+		}
+	}
+}
+
+// PublishDriverResponse publishes driver's acceptance or decline to Redis PubSub
+func (g *GeoService) PublishDriverResponse(ctx context.Context, driverID, tripID string, accepted bool) error {
+	if g.client == nil {
+		g.mu.Lock()
+		if ch, ok := g.pendingChans[driverID]; ok {
+			select {
+			case ch <- accepted:
+			default:
+			}
+			delete(g.pendingChans, driverID)
+		}
+		g.mu.Unlock()
+		return nil
+	}
+
+	channel := fmt.Sprintf("dispatch:response:%s", driverID)
+	payload := "DECLINE"
+	if accepted {
+		payload = "ACCEPT"
+	}
+	return g.client.Publish(ctx, channel, payload).Err()
+}
+

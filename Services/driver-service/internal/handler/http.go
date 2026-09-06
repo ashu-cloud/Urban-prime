@@ -17,6 +17,9 @@ func (h *DriverHandler) Routes() http.Handler {
 	mux.HandleFunc("GET /drivers/{id}", h.GetDriverHTTP)
 	mux.HandleFunc("PUT /api/v1/drivers/{id}/status", h.UpdateDriverStatusHTTP)
 	mux.HandleFunc("POST /api/v1/drivers/{id}/status", h.UpdateDriverStatusHTTP)
+	mux.HandleFunc("POST /api/v1/dispatch/{id}/respond", h.RespondDispatchHTTP)
+	mux.HandleFunc("POST /api/v1/drivers/{id}/dispatch-response", h.RespondDispatchHTTP)
+	mux.HandleFunc("POST /api/v1/drivers/dispatch/respond", h.RespondDispatchHTTP)
 	return mux
 }
 
@@ -89,3 +92,46 @@ func (h *DriverHandler) UpdateDriverStatusHTTP(w http.ResponseWriter, r *http.Re
 	}
 	httpserver.WriteJSON(w, http.StatusOK, resp)
 }
+
+func (h *DriverHandler) RespondDispatchHTTP(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		DriverID  string `json:"driver_id"`
+		DriverID2 string `json:"driverId"`
+		TripID    string `json:"trip_id"`
+		TripID2   string `json:"tripId"`
+		Accepted  *bool  `json:"accepted"`
+		Accept    *bool  `json:"accept"`
+	}
+	if err := httpserver.DecodeJSON(r, &body); err != nil {
+		httpserver.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	driverID := httpserver.FirstNonEmpty(r.PathValue("id"), body.DriverID, body.DriverID2)
+	tripID := httpserver.FirstNonEmpty(body.TripID, body.TripID2)
+
+	isAccepted := false
+	if body.Accepted != nil {
+		isAccepted = *body.Accepted
+	} else if body.Accept != nil {
+		isAccepted = *body.Accept
+	}
+
+	if driverID == "" {
+		httpserver.WriteError(w, http.StatusBadRequest, "driver_id is required")
+		return
+	}
+
+	if err := h.RespondToDispatch(r.Context(), driverID, tripID, isAccepted); err != nil {
+		httpserver.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httpserver.WriteJSON(w, http.StatusOK, map[string]any{
+		"success":   true,
+		"driver_id": driverID,
+		"trip_id":   tripID,
+		"accepted":  isAccepted,
+	})
+}
+

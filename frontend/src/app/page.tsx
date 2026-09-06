@@ -446,12 +446,12 @@ export default function Home() {
           {/* Portfolio Architecture Pill */}
          
 
-          <h1 className="text-5xl md:text-6xl lg:text-[72px] font-medium text-white mb-6 leading-[1.05] tracking-tight">
+          <h1 className="text-5xl md:text-6xl lg:text-[72px] font-medium text-white mb-6 leading-[1.05] tracking-tight drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)]">
             Real-Time Ride-Hailing <br />
             Microservice Platform
           </h1>
           
-          <p className="text-[17px] md:text-[20px] text-white/85 leading-relaxed font-medium mb-10 max-w-2xl">
+          <p className="text-[17px] md:text-[20px] text-white/90 leading-relaxed font-medium mb-10 max-w-2xl drop-shadow-[0_2px_12px_rgba(0,0,0,1)]">
             A production-grade distributed backend ecosystem built with Go microservices, Apache Kafka event streaming, Redis geospatial indexing, and Saga-orchestrated transactions.
           </p>
 

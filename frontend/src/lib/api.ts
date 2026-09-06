@@ -430,4 +430,53 @@ export const api = {
       console.error('Failed to update driver location:', err);
     }
   },
+
+  // 5. Get Trip Details (/api/v1/trips/{id})
+  async getTrip(tripId: string): Promise<TripResponse> {
+    const endpoints = [
+      `${APISIX_BASE_URL}/api/v1/trips/${tripId}`,
+      `${APISIX_BASE_URL}/trips/${tripId}`,
+      `http://localhost:8051/api/v1/trips/${tripId}`,
+    ];
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (err) {
+        // Continue to next endpoint
+      }
+    }
+    throw new Error(`Failed to fetch trip details for ${tripId}`);
+  },
+
+  // 6. Respond to Dispatch Offer (/api/v1/drivers/{id}/dispatch-response)
+  async respondToDispatch(driverId: string, tripId: string, accept: boolean): Promise<any> {
+    const endpoints = [
+      `${APISIX_BASE_URL}/api/v1/drivers/${driverId}/dispatch-response`,
+      `${APISIX_BASE_URL}/api/v1/dispatch/${driverId}/respond`,
+      `http://localhost:8052/api/v1/drivers/${driverId}/dispatch-response`,
+      `http://localhost:8052/api/v1/dispatch/${driverId}/respond`,
+    ];
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            driver_id: driverId,
+            trip_id: tripId,
+            accepted: accept,
+          }),
+        });
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (err) {
+        // Continue to next endpoint
+      }
+    }
+    throw new Error('Failed to send dispatch response to driver service');
+  },
 };

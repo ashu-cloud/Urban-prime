@@ -32,6 +32,8 @@ type GeoServiceInterface interface {
 	AcquireDispatchLock(ctx context.Context, driverID, tripID string, ttl time.Duration) (bool, error)
 	ReleaseDispatchLock(ctx context.Context, driverID string) error
 	RemoveDriver(ctx context.Context, driverID string) error
+	WaitForDriverResponse(ctx context.Context, driverID, tripID string, timeout time.Duration) bool
+	PublishDriverResponse(ctx context.Context, driverID, tripID string, accepted bool) error
 }
 
 type DriverRepoInterface interface {
@@ -45,19 +47,19 @@ type KafkaProducerInterface interface {
 
 // DispatchLoop is the core matchmaking engine for ride allocation.
 type DispatchLoop struct {
-	geoService              GeoServiceInterface
-	repo                    DriverRepoInterface
-	producer                KafkaProducerInterface
-	SimulateDriverResponse  func(ctx context.Context, driverID string) bool
+	geoService             GeoServiceInterface
+	repo                   DriverRepoInterface
+	producer               KafkaProducerInterface
+	SimulateDriverResponse func(ctx context.Context, driverID string) bool
 }
 
 // NewDispatchLoop constructs a new DispatchLoop instance
 func NewDispatchLoop(geoService GeoServiceInterface, repo DriverRepoInterface, producer KafkaProducerInterface) *DispatchLoop {
 	return &DispatchLoop{
-		geoService: geoService,
-		repo:       repo,
-		producer:   producer,
-		SimulateDriverResponse: defaultSimulateDriverResponse,
+		geoService:             geoService,
+		repo:                   repo,
+		producer:               producer,
+		SimulateDriverResponse: nil,
 	}
 }
 
@@ -137,7 +139,12 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 		logger.Info(ctx, fmt.Sprintf("Dispatch Offer #%d sent to driver", attempts), "driver_id", driverID, "driver_name", driver.Name, "trip_id", tripID)
 
 		// STEP 3c: OFFER RESPONSE HANDLING / ACCEPTANCE WINDOW
-		accepted := d.SimulateDriverResponse(ctx, driverID)
+		var accepted bool
+		if d.SimulateDriverResponse != nil {
+			accepted = d.SimulateDriverResponse(ctx, driverID)
+		} else {
+			accepted = d.geoService.WaitForDriverResponse(ctx, driverID, tripID, DefaultOfferTimeoutSecs*time.Second)
+		}
 
 		if accepted {
 			logger.Info(ctx, "Driver ACCEPTED ride offer!", "driver_id", driverID, "trip_id", tripID)

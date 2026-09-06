@@ -74,6 +74,14 @@ func (m *MockGeoService) RemoveDriver(ctx context.Context, driverID string) erro
 	return nil
 }
 
+func (m *MockGeoService) WaitForDriverResponse(ctx context.Context, driverID, tripID string, timeout time.Duration) bool {
+	return false
+}
+
+func (m *MockGeoService) PublishDriverResponse(ctx context.Context, driverID, tripID string, accepted bool) error {
+	return nil
+}
+
 type MockDriverRepo struct {
 	GetByIDFunc      func(ctx context.Context, id string) (*domain.Driver, error)
 	UpdateStatusFunc func(ctx context.Context, id string, status domain.DriverStatus) error
