@@ -1,11 +1,12 @@
-FROM golang:1.22-alpine
+# STAGE 1: Builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
 # Install required tools
 RUN apk add --no-cache git curl bash
 
-# Copy Go workspace configuration
+# Copy Go workspace configuration and all source code
 COPY go.work go.work.sum ./
 COPY pkg/ ./pkg/
 COPY proto/ ./proto/
@@ -13,5 +14,27 @@ COPY Services/ ./Services/
 COPY devserver/ ./devserver/
 COPY tests/live/ ./tests/live/
 
-# Start all 6 Go microservices via the devserver runner
-CMD ["go", "run", "./devserver/main.go"]
+# Build all 6 microservices as static binaries
+RUN cd Services/auth-service && go build -o main cmd/main.go
+RUN cd Services/trip-service && go build -o main cmd/main.go
+RUN cd Services/driver-service && go build -o main cmd/main.go
+RUN cd Services/location-service && go build -o main cmd/main.go
+RUN cd Services/payment-service && go build -o main cmd/main.go
+RUN cd Services/notification-service && go build -o main cmd/main.go
+
+# Build the devserver itself
+RUN cd devserver && go build -o devserver-bin main.go
+
+# STAGE 2: Runtime
+FROM alpine:latest
+
+WORKDIR /app
+
+# Install bash for the runtime if needed by any scripts, and ca-certificates for Stripe/external APIs
+RUN apk add --no-cache bash ca-certificates
+
+# Copy the built workspace from builder
+COPY --from=builder /app /app
+
+# Start all 6 Go microservices via the pre-compiled devserver runner
+CMD ["./devserver/devserver-bin"]

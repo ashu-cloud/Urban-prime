@@ -67,7 +67,14 @@ func main() {
 func runService(ctx context.Context, wg *sync.WaitGroup, svc Service) {
 	defer wg.Done()
 
-	cmd := exec.CommandContext(ctx, "go", "run", "cmd/main.go")
+	var cmd *exec.Cmd
+	// Check if a precompiled binary 'main' exists in the service directory
+	binPath := filepath.Join(svc.Dir, "main")
+	if _, err := os.Stat(binPath); err == nil {
+		cmd = exec.CommandContext(ctx, "./main")
+	} else {
+		cmd = exec.CommandContext(ctx, "go", "run", "cmd/main.go")
+	}
 	cmd.Dir = svc.Dir
 
 	stdout, err := cmd.StdoutPipe()
