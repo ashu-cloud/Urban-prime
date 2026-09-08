@@ -17,8 +17,8 @@ import (
 // THE BIG PICTURE — HOW REAL-TIME TRACKING WORKS:
 //
 //  1. Driver's mobile app sends GPS pings to Location Service (gRPC every 3s)
-//  2. Location Service writes GPS → Redis Geo + Kafka topic `driver.location.v1`
-//  3. THIS service (Notification Service) consumes from Kafka
+//  2. Location Service writes GPS → Redis Geo + Redis Stream `driver.location.v1`
+//  3. THIS service (Notification Service) consumes from Redis Streams
 //  4. It calls Centrifugo HTTP API: POST /api/publish channel="tracking#<trip_id>"
 //  5. Centrifugo pushes the message instantly to ALL WebSocket clients on that channel
 //  6. Rider's browser map marker updates → 🚖 driver appears moving on the map!
@@ -34,23 +34,23 @@ func main() {
 
 	logger.Info(ctx, "Initializing Notification Service (Centrifugo WebSocket Gateway)...",
 		"centrifugo_url", cfg.CentrifugoURL,
-		"kafka_brokers", cfg.KafkaBrokers,
+		"redis_addr", cfg.RedisAddr,
 	)
 
 	// 1. CENTRIFUGO HTTP CLIENT — for pushing real-time WebSocket messages
 	centrifugoClient := centrifugo.NewClient(cfg.CentrifugoURL, cfg.CentrifugoAPIKey)
 
-	// 2. KAFKA CONSUMER — reads location, trip, and match events from Kafka topics
-	kafkaConsumer, err := consumer.NewKafkaConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, centrifugoClient)
+	// 2. REDIS STREAM CONSUMER — reads location, trip, and match events from Redis Streams
+	streamConsumer, err := consumer.NewKafkaConsumer(cfg.RedisAddr, cfg.ConsumerGroupID, centrifugoClient)
 	if err != nil {
-		logger.Warn(ctx, "Kafka consumer init warning — will retry connections automatically", "error", err)
+		logger.Warn(ctx, "Redis stream consumer init warning — will retry connections automatically", "error", err)
 	}
 
 	// 3. START THE EVENT CONSUMPTION LOOP (runs as a blocking goroutine)
-	// This is the core loop: Kafka events → Centrifugo WebSocket push
-	if kafkaConsumer != nil {
-		go kafkaConsumer.Start(ctx)
-		logger.Info(ctx, "Kafka consumer started — real-time event pipeline is LIVE 🚀")
+	// This is the core loop: Redis Stream events → Centrifugo WebSocket push
+	if streamConsumer != nil {
+		go streamConsumer.Start(ctx)
+		logger.Info(ctx, "Redis stream consumer started — real-time event pipeline is LIVE 🚀")
 	}
 
 	// 4. GRACEFUL SHUTDOWN — wait for SIGINT or SIGTERM
@@ -59,6 +59,6 @@ func main() {
 	<-quit
 
 	logger.Info(ctx, "Shutting down Notification Service gracefully...")
-	cancel() // signal the Kafka consumer loop to stop
+	cancel() // signal the stream consumer loop to stop
 	logger.Info(ctx, "Notification Service stopped cleanly")
 }

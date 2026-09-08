@@ -9,7 +9,7 @@ type Config struct {
 	Port               string
 	HTTPPort           string
 	DatabaseDSN        string
-	KafkaBrokers       string
+	RedisStreamAddr    string
 	OSRMHost           string
 	DriverServiceAddr  string
 	PaymentServiceAddr string
@@ -24,7 +24,7 @@ func Load() *Config {
 		Port:               getEnv("TRIP_SERVICE_PORT", "50051"),
 		HTTPPort:           getEnv("TRIP_SERVICE_HTTP_PORT", "8051"),
 		DatabaseDSN:        getEnv("POSTGRES_DSN", ""),
-		KafkaBrokers:       getEnv("KAFKA_BROKERS", "localhost:9092"),
+		RedisStreamAddr:    getEnv("REDIS_ADDR", "localhost:6379"),
 		OSRMHost:           getEnv("OSRM_HOST", "http://router.project-osrm.org"),
 		DriverServiceAddr:  getEnv("DRIVER_SERVICE_ADDR", "localhost:50052"),
 		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),

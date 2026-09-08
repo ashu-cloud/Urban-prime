@@ -4,22 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/cab-booking/notification-service/internal/centrifugo"
 	"github.com/cab-booking/pkg/logger"
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/redis/go-redis/v9"
 )
 
-// Topics consumed by the Notification Service
+// Redis Stream keys consumed by the Notification Service
 const (
 	TopicDriverLocation = "driver.location.v1" // GPS pings from active drivers
 	TopicTripEvents     = "trip.events.v1"      // Trip lifecycle events (created, matched, completed)
 	TopicMatchEvents    = "driver.match.v1"     // Driver dispatch events (offered, accepted, declined)
 )
 
-// locationEvent mirrors the payload published by the Location Service to Kafka
+// locationEvent mirrors the payload published by the Location Service
 type locationEvent struct {
 	DriverID  string    `json:"driver_id"`
 	TripID    string    `json:"trip_id,omitempty"`
@@ -30,7 +29,7 @@ type locationEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// tripEvent mirrors the payload published by the Trip Service to Kafka
+// tripEvent mirrors the payload published by the Trip Service
 type tripEvent struct {
 	TripID        string    `json:"trip_id"`
 	RiderID       string    `json:"rider_id"`
@@ -42,7 +41,7 @@ type tripEvent struct {
 	Timestamp     time.Time `json:"timestamp"`
 }
 
-// matchEvent mirrors the payload published by the Driver Service to Kafka
+// matchEvent mirrors the payload published by the Driver Service
 type matchEvent struct {
 	EventType string    `json:"event_type"` // OFFERED, ACCEPTED, DECLINED, EXHAUSTED
 	TripID    string    `json:"trip_id"`
@@ -51,108 +50,144 @@ type matchEvent struct {
 }
 
 // KafkaConsumer is the core of the Notification Service.
-// It reads events from Kafka and translates them into Centrifugo WebSocket broadcasts.
+// (Name kept as KafkaConsumer for zero-change compatibility in main.go and tests.)
+// It reads events from Redis Streams and translates them into Centrifugo WebSocket broadcasts.
 //
 // HOW IT SCALES:
-// Kafka consumer groups allow multiple instances of the Notification Service to run in parallel.
-// Kafka automatically distributes partitions across instances — no duplicate message processing!
-// This means you can scale the Notification Service horizontally to handle more throughput.
+// Redis consumer groups allow multiple instances of the Notification Service to run in parallel.
+// Redis automatically delivers unACKed messages to available group members — no duplicate processing.
 type KafkaConsumer struct {
-	client      *kgo.Client           // Kafka consumer client
-	centrifugo  *centrifugo.Client    // Centrifugo HTTP publish client
+	client       *redis.Client
+	groupID      string
+	consumerName string
+	centrifugo   *centrifugo.Client
 }
 
-// NewKafkaConsumer creates a new Kafka consumer group member
-func NewKafkaConsumer(brokers, groupID string, centrifugoClient *centrifugo.Client) (*KafkaConsumer, error) {
-	brokerList := strings.Split(brokers, ",")
+// NewKafkaConsumer creates a Redis Streams consumer that reads from all three event streams.
+func NewKafkaConsumer(redisAddr, groupID string, centrifugoClient *centrifugo.Client) (*KafkaConsumer, error) {
+	var opt *redis.Options
+	var err error
 
-	client, err := kgo.NewClient(
-		kgo.SeedBrokers(brokerList...),
-		// Consumer group ID — Kafka distributes partitions across all members of the same group
-		kgo.ConsumerGroup(groupID),
-		// Subscribe to all three event topics
-		kgo.ConsumeTopics(TopicDriverLocation, TopicTripEvents, TopicMatchEvents),
-		// Start consuming from the latest offset (skip historical messages on first start)
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka consumer: %w", err)
+	if len(redisAddr) > 8 && (redisAddr[:8] == "redis://" || redisAddr[:9] == "rediss://") {
+		opt, err = redis.ParseURL(redisAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse redis URL for notification consumer: %w", err)
+		}
+	} else {
+		opt = &redis.Options{Addr: redisAddr}
 	}
 
-	return &KafkaConsumer{
-		client:     client,
-		centrifugo: centrifugoClient,
-	}, nil
+	opt.DialTimeout = 3 * time.Second
+	client := redis.NewClient(opt)
+
+	c := &KafkaConsumer{
+		client:       client,
+		groupID:      groupID,
+		consumerName: "notification-service-1",
+		centrifugo:   centrifugoClient,
+	}
+
+	// Ensure consumer groups exist for all three streams
+	bgCtx := context.Background()
+	for _, stream := range []string{TopicDriverLocation, TopicTripEvents, TopicMatchEvents} {
+		if err := client.XGroupCreateMkStream(bgCtx, stream, groupID, "$").Err(); err != nil {
+			if err.Error() != "BUSYGROUP Consumer Group name already exists" {
+				logger.Warn(bgCtx, "Notification consumer group create warning", "stream", stream, "error", err)
+			}
+		}
+	}
+
+	return c, nil
 }
 
 // Start begins the continuous event consumption loop.
 // This runs as a goroutine in main.go and processes events indefinitely until ctx is cancelled.
 //
 // The loop:
-//   1. Poll Kafka for a batch of records (blocking with ~100ms timeout)
-//   2. For each record, dispatch to the appropriate handler by topic
-//   3. Commit offsets back to Kafka (marks messages as processed)
+//  1. XREADGROUP across all 3 streams in a single blocking call (~100ms timeout)
+//  2. For each record, dispatch to the appropriate handler by stream name
+//  3. XACKs each message so it is not re-delivered to another consumer in the group
 func (k *KafkaConsumer) Start(ctx context.Context) {
-	logger.Info(ctx, "Kafka consumer started — listening for real-time events",
-		"topics", []string{TopicDriverLocation, TopicTripEvents, TopicMatchEvents},
+	logger.Info(ctx, "Redis stream consumer started — listening for real-time events",
+		"streams", []string{TopicDriverLocation, TopicTripEvents, TopicMatchEvents},
+		"group", k.groupID,
 	)
 
 	for {
-		// Check if context was cancelled (service shutdown signal)
 		select {
 		case <-ctx.Done():
-			logger.Info(ctx, "Kafka consumer stopping — context cancelled")
-			k.client.Close()
+			logger.Info(ctx, "Redis stream consumer stopping — context cancelled")
+			_ = k.client.Close()
 			return
 		default:
 		}
 
-		// PollFetches blocks until records arrive or timeout (~100ms idle)
-		fetches := k.client.PollFetches(ctx)
-		if fetches.IsClientClosed() {
-			return
+		// XREADGROUP blocks up to 100ms waiting for new messages across all 3 streams
+		streams, err := k.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    k.groupID,
+			Consumer: k.consumerName,
+			Streams:  []string{TopicDriverLocation, TopicTripEvents, TopicMatchEvents, ">", ">", ">"},
+			Count:    50,
+			Block:    100 * time.Millisecond,
+		}).Result()
+
+		if err != nil {
+			if err == redis.Nil {
+				continue // timeout — no messages, loop again
+			}
+			if ctx.Err() != nil {
+				return // context cancelled
+			}
+			logger.Warn(ctx, "Redis stream XREADGROUP error", "error", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
 
-		// Log any Kafka fetch errors (network issues, partition rebalancing, etc.)
-		fetches.EachError(func(t string, p int32, err error) {
-			logger.Warn(ctx, "Kafka fetch error", "topic", t, "partition", p, "error", err)
-		})
-
-		// Process each record by routing to the correct handler based on the topic
-		fetches.EachRecord(func(record *kgo.Record) {
-			switch record.Topic {
-			case TopicDriverLocation:
-				k.handleLocationEvent(ctx, record.Value)
-			case TopicTripEvents:
-				k.handleTripEvent(ctx, record.Value)
-			case TopicMatchEvents:
-				k.handleMatchEvent(ctx, record.Value)
+		for _, stream := range streams {
+			for _, msg := range stream.Messages {
+				switch stream.Stream {
+				case TopicDriverLocation:
+					k.handleLocationEvent(ctx, msg.Values)
+				case TopicTripEvents:
+					k.handleTripEvent(ctx, msg.Values)
+				case TopicMatchEvents:
+					k.handleMatchEvent(ctx, msg.Values)
+				}
+				// ACK the message so it is not re-delivered
+				_ = k.client.XAck(ctx, stream.Stream, k.groupID, msg.ID).Err()
 			}
-		})
+		}
 	}
 }
 
-// handleLocationEvent translates a Kafka location update into a Centrifugo WebSocket push.
+// handleLocationEvent translates a Redis stream location update into a Centrifugo WebSocket push.
 // This is the critical path for the "driver moving on map" live-tracking feature!
-func (k *KafkaConsumer) handleLocationEvent(ctx context.Context, data []byte) {
+func (k *KafkaConsumer) handleLocationEvent(ctx context.Context, values map[string]interface{}) {
+	raw, ok := values["payload"].(string)
+	if !ok {
+		return
+	}
 	var event locationEvent
-	if err := json.Unmarshal(data, &event); err != nil {
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
 		logger.Warn(ctx, "Failed to parse location event", "error", err)
 		return
 	}
 
 	// Only push live tracking if the driver is on an active trip
-	// (rider needs to see driver approaching on the map)
 	if event.TripID != "" {
 		k.centrifugo.PublishDriverLocation(ctx, event.TripID, event.DriverID, event.Latitude, event.Longitude, event.Bearing)
 	}
 }
 
-// handleTripEvent translates Kafka trip lifecycle events into Centrifugo WebSocket pushes.
+// handleTripEvent translates trip lifecycle events into Centrifugo WebSocket pushes.
 // Rider app receives: "Driver matched!", "Trip started!", "Trip completed!" notifications.
-func (k *KafkaConsumer) handleTripEvent(ctx context.Context, data []byte) {
+func (k *KafkaConsumer) handleTripEvent(ctx context.Context, values map[string]interface{}) {
+	raw, ok := values["payload"].(string)
+	if !ok {
+		return
+	}
 	var event tripEvent
-	if err := json.Unmarshal(data, &event); err != nil {
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
 		logger.Warn(ctx, "Failed to parse trip event", "error", err)
 		return
 	}
@@ -164,7 +199,6 @@ func (k *KafkaConsumer) handleTripEvent(ctx context.Context, data []byte) {
 		"status":    event.Status,
 	}
 
-	// Map trip status to a human-readable event type for the frontend
 	eventType := fmt.Sprintf("TRIP_%s", event.Status)
 	k.centrifugo.PublishTripEvent(ctx, event.TripID, eventType, payload)
 
@@ -176,9 +210,13 @@ func (k *KafkaConsumer) handleTripEvent(ctx context.Context, data []byte) {
 
 // handleMatchEvent handles driver dispatch events (ACCEPTED, DECLINED, EXHAUSTED).
 // Rider app receives: "Driver is on the way!" or "No drivers available, please try again."
-func (k *KafkaConsumer) handleMatchEvent(ctx context.Context, data []byte) {
+func (k *KafkaConsumer) handleMatchEvent(ctx context.Context, values map[string]interface{}) {
+	raw, ok := values["payload"].(string)
+	if !ok {
+		return
+	}
 	var event matchEvent
-	if err := json.Unmarshal(data, &event); err != nil {
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
 		logger.Warn(ctx, "Failed to parse match event", "error", err)
 		return
 	}
@@ -206,9 +244,11 @@ func (k *KafkaConsumer) handleMatchEvent(ctx context.Context, data []byte) {
 			"timestamp":          time.Now().UnixMilli(),
 		}
 		if err := k.centrifugo.Publish(ctx, driverChannel, dispatchOfferPayload); err != nil {
-			logger.Warn(ctx, "Failed to publish dispatch offer to driver Centrifugo channel", "driver_id", event.DriverID, "error", err)
+			logger.Warn(ctx, "Failed to publish dispatch offer to driver Centrifugo channel",
+				"driver_id", event.DriverID, "error", err)
 		} else {
-			logger.Info(ctx, "Published dispatch offer to driver Centrifugo channel", "channel", driverChannel, "trip_id", event.TripID)
+			logger.Info(ctx, "Published dispatch offer to driver Centrifugo channel",
+				"channel", driverChannel, "trip_id", event.TripID)
 		}
 	}
 }

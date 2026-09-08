@@ -89,6 +89,7 @@ export default function DriverPage() {
 
   // 0. AUTH GUARD: Verify active Driver session & hydrate driver-specific shift stats
   useEffect(() => {
+    document.title = 'Driver App';
     const currentSession = getStoredDriverSession();
     if (!currentSession || currentSession.role !== 'DRIVER') {
       router.replace('/driver/login');
@@ -267,6 +268,14 @@ export default function DriverPage() {
           heading: newPos.heading ?? 45,
           isAvailable: !activeTrip,
         });
+
+        // Also ping the backend API to update Redis GEO spatial index for dispatch
+        api.updateLocation(
+          session?.userId || 'drv_901',
+          newPos.lat,
+          newPos.lng,
+          newPos.heading ?? 45
+        ).catch(e => console.warn('Failed to update location to API:', e));
 
         return newPos;
       });

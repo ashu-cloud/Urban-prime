@@ -57,9 +57,9 @@ func main() {
 	osrmClient := osrm.NewClient(cfg.OSRMHost)
 	calculator := pricing.NewCalculator(cfg)
 
-	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
+	producer, err := kafka.NewProducer(cfg.RedisStreamAddr)
 	if err != nil {
-		logger.Warn(ctx, "Kafka producer initialized with warning", "error", err)
+		logger.Warn(ctx, "Redis stream producer initialized with warning", "error", err)
 	}
 	if producer != nil {
 		defer producer.Close()
@@ -75,19 +75,19 @@ func main() {
 	// 3. SAGA ORCHESTRATOR
 	orchestrator := saga.NewOrchestrator(repo, osrmClient, calculator, producer, paymentClient)
 
-	// 4. KAFKA CONSUMER (Listens for `driver.match.v1 { ACCEPTED / EXHAUSTED }` to update trip status)
+	// 4. REDIS STREAM CONSUMER (Listens for `driver.match.v1 { ACCEPTED / EXHAUSTED }` to update trip status)
 	consumer, err := kafka.NewConsumer(
-		cfg.KafkaBrokers,
+		cfg.RedisStreamAddr,
 		"trip-service-group",
 		orchestrator.AssignDriverToTrip,
 		orchestrator.CompensateNoDriverAvailable,
 	)
 	if err != nil {
-		logger.Warn(ctx, "Trip Service Kafka consumer init warning", "error", err)
+		logger.Warn(ctx, "Trip Service Redis stream consumer init warning", "error", err)
 	}
 	if consumer != nil {
 		go consumer.Start(ctx)
-		logger.Info(ctx, "Trip Service Kafka consumer loop LIVE — listening for driver match outcomes")
+		logger.Info(ctx, "Trip Service Redis stream consumer loop LIVE — listening for driver match outcomes")
 	}
 
 	// 5. gRPC HANDLER
@@ -142,21 +142,28 @@ func initDatabase(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	config.MaxConns = 25
 	config.MinConns = 5
 
-	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	pool, err := pgxpool.NewWithConfig(ctxTimeout, config)
-	if err != nil {
-		return nil, err
+	var pool *pgxpool.Pool
+	for attempt := 1; attempt <= 5; attempt++ {
+		ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+		pool, err = pgxpool.NewWithConfig(ctxTimeout, config)
+		if err == nil {
+			if pingErr := pool.Ping(ctxTimeout); pingErr == nil {
+				cancel()
+				logger.Info(ctx, "Connected to PostgreSQL database successfully")
+				return pool, nil
+			} else {
+				err = pingErr
+				pool.Close()
+			}
+		}
+		cancel()
+		if attempt < 5 {
+			logger.Warn(ctx, fmt.Sprintf("PostgreSQL connection attempt %d/5 failed, retrying in 2s...", attempt), "error", err)
+			time.Sleep(2 * time.Second)
+		}
 	}
 
-	if err := pool.Ping(ctxTimeout); err != nil {
-		pool.Close()
-		return nil, err
-	}
-
-	logger.Info(ctx, "Connected to PostgreSQL database successfully")
-	return pool, nil
+	return nil, err
 }
 
 func runMigrations(ctx context.Context, dsn string) {

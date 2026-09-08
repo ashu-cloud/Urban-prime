@@ -32,31 +32,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Apache Kafka Event Streaming Bus
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: cab_zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: cab_kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
   # Centrifugo Real-time WebSockets
   centrifugo:
@@ -126,7 +101,6 @@ services:
       - POSTGRES_DSN=${POSTGRES_DSN:-postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable}
       - DATABASE_URL=${DATABASE_URL:-postgres://cab_user:cab_password@postgres:5432/cab_booking_db?sslmode=disable}
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
-      - KAFKA_BROKERS=kafka:29092
       - CENTRIFUGO_URL=http://centrifugo:8000
       - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY}
       - OSRM_HOST=http://router.project-osrm.org
@@ -149,8 +123,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_started
       centrifugo:
         condition: service_healthy
 

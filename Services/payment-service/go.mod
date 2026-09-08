@@ -7,6 +7,7 @@ require (
 	github.com/cab-booking/proto v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.4
+	github.com/stripe/stripe-go/v76 v76.25.0
 	google.golang.org/grpc v1.62.0
 )
 
@@ -16,7 +17,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/stretchr/testify v1.8.3 // indirect
-	github.com/stripe/stripe-go/v76 v76.25.0 // indirect
 	golang.org/x/crypto v0.20.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect

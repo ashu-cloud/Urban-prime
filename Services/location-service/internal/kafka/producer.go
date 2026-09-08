@@ -4,18 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/cab-booking/pkg/logger"
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/redis/go-redis/v9"
 )
 
-// TopicDriverLocation is the Kafka topic that carries all driver GPS update events.
-// The Notification Service consumes from this topic to push real-time map updates.
+// TopicDriverLocation is the Redis Stream key that carries all driver GPS update events.
+// The Notification Service consumes from this stream to push real-time map updates.
 const TopicDriverLocation = "driver.location.v1"
 
-// LocationEvent is the Kafka message payload published for every GPS ping from a driver.
+// LocationEvent is the payload published for every GPS ping from a driver.
 // Downstream consumers (Notification Service) read this to push live map updates to riders.
 type LocationEvent struct {
 	DriverID  string    `json:"driver_id"`
@@ -27,50 +26,61 @@ type LocationEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// Producer publishes LocationEvent messages to Kafka asynchronously.
+// Producer publishes LocationEvent messages to a Redis Stream.
 type Producer struct {
-	client *kgo.Client
+	client *redis.Client
 }
 
-// NewProducer creates a Kafka producer for the Location Service
-func NewProducer(brokers string) (*Producer, error) {
-	brokerList := strings.Split(brokers, ",")
-	client, err := kgo.NewClient(
-		kgo.SeedBrokers(brokerList...),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka client: %w", err)
+// NewProducer creates a Redis-backed stream producer for the Location Service.
+func NewProducer(redisAddr string) (*Producer, error) {
+	var opt *redis.Options
+	var err error
+
+	if len(redisAddr) > 8 && (redisAddr[:8] == "redis://" || redisAddr[:9] == "rediss://") {
+		opt, err = redis.ParseURL(redisAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse redis URL for location producer: %w", err)
+		}
+	} else {
+		opt = &redis.Options{Addr: redisAddr}
 	}
+
+	opt.DialTimeout = 3 * time.Second
+	client := redis.NewClient(opt)
 	return &Producer{client: client}, nil
 }
 
-// PublishLocationUpdate serialises and publishes a driver GPS update event to Kafka.
-// Key = driver_id ensures all pings from the same driver go to the same partition
-// (maintains ordering of GPS coordinates per driver).
+// PublishLocationUpdate appends a driver GPS update event to the Redis Stream.
+// Key = DriverID is embedded in the payload; MAXLEN ~ 50000 keeps ~last 50k GPS pings.
+// Non-fatal if it fails — Redis Geo is already updated with the new position.
 func (p *Producer) PublishLocationUpdate(ctx context.Context, event LocationEvent) error {
+	if p.client == nil {
+		return nil
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal location event: %w", err)
 	}
 
-	record := &kgo.Record{
-		Topic: TopicDriverLocation,
-		Key:   []byte(event.DriverID), // keyed by driver_id for ordered delivery per driver
-		Value: data,
-	}
-
 	ctxTimeout, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	if p.client != nil {
-		results := p.client.ProduceSync(ctxTimeout, record)
-		if err := results.FirstErr(); err != nil {
-			// Non-fatal: location data is already written to Redis Geo. Kafka is for downstream fanout.
-			logger.Warn(ctx, "Kafka location event publish failed (Redis already updated)",
-				"driver_id", event.DriverID,
-				"error", err,
-			)
-		}
+	args := &redis.XAddArgs{
+		Stream: TopicDriverLocation,
+		MaxLen: 50000,
+		Approx: true,
+		Values: map[string]interface{}{
+			"payload": string(data),
+		},
+	}
+
+	if err := p.client.XAdd(ctxTimeout, args).Err(); err != nil {
+		// Non-fatal: location data is already written to Redis Geo. Stream is for downstream fanout.
+		logger.Warn(ctx, "Redis stream location event publish failed (Redis Geo already updated)",
+			"driver_id", event.DriverID,
+			"error", err,
+		)
 	}
 
 	return nil
@@ -78,6 +88,6 @@ func (p *Producer) PublishLocationUpdate(ctx context.Context, event LocationEven
 
 func (p *Producer) Close() {
 	if p.client != nil {
-		p.client.Close()
+		_ = p.client.Close()
 	}
 }

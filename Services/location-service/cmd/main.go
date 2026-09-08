@@ -46,11 +46,12 @@ func main() {
 		defer redisClient.Close()
 	}
 
-	// 2. KAFKA PRODUCER — for downstream real-time WebSocket fanout
-	// Notification Service consumes these events and pushes live map updates to rider apps via Centrifugo
-	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
+	// 2. REDIS STREAM PRODUCER — for downstream real-time WebSocket fanout
+	// Notification Service consumes these events and pushes live map updates to rider apps via Centrifugo.
+	// Uses the same Redis instance as Geo — no extra infrastructure needed.
+	producer, err := kafka.NewProducer(cfg.RedisAddr)
 	if err != nil {
-		logger.Warn(ctx, "Kafka producer init with warning (location events will be Redis-only)", "error", err)
+		logger.Warn(ctx, "Redis stream producer init with warning (location events will be Redis Geo-only)", "error", err)
 	}
 	if producer != nil {
 		defer producer.Close()

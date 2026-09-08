@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS trips (
     trip_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    rider_id         UUID NOT NULL,
-    driver_id        UUID,
+    rider_id         TEXT NOT NULL,
+    driver_id        TEXT,
     status           TEXT NOT NULL DEFAULT 'REQUESTED',
     pickup_lat       DOUBLE PRECISION NOT NULL,
     pickup_lng       DOUBLE PRECISION NOT NULL,

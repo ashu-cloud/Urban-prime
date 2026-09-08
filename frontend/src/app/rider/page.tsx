@@ -120,7 +120,22 @@ export interface RiderActivityItem {
   status: 'COMPLETED';
 }
 
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder');
+
 export default function RiderPage() {
+  return (
+    <Elements stripe={stripePromise}>
+      <RiderPageContent />
+    </Elements>
+  );
+}
+
+function RiderPageContent() {
+  const stripe = useStripe();
+  const elements = useElements();
   const router = useRouter();
   const [session, setSession] = useState<any>(null);
   const [pickupAddress, setPickupAddress] = useState('');
@@ -129,8 +144,9 @@ export default function RiderPage() {
   const [activityHistory, setActivityHistory] = useState<RiderActivityItem[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
 
-  // Hydrate active rider session
+  // Hydrate active rider session & set title
   useEffect(() => {
+    document.title = 'Customer App';
     const currentSession = getStoredRiderSession();
     if (currentSession && currentSession.role === 'RIDER') {
       setSession(currentSession);
@@ -347,13 +363,7 @@ export default function RiderPage() {
       return;
     }
 
-    if (drivingDistanceKm > MAX_TRIP_DISTANCE_KM) {
-      setTripError(`Trip distance (${drivingDistanceKm} km) exceeds the maximum allowed limit of ${MAX_TRIP_DISTANCE_KM} km.`);
-      return;
-    }
-
-    const currentSession = getStoredRiderSession();
-    if (!currentSession || currentSession.role !== 'RIDER') {
+    if (!session || session.role !== 'RIDER') {
       // Persist the entire ride selection so rider loses nothing upon login/signup
       const pendingRide = {
         pickupAddress,
@@ -369,11 +379,38 @@ export default function RiderPage() {
       return;
     }
 
+    if (drivingDistanceKm > MAX_TRIP_DISTANCE_KM) {
+      setTripError(`Trip distance (${drivingDistanceKm} km) exceeds the maximum allowed limit of ${MAX_TRIP_DISTANCE_KM} km.`);
+      return;
+    }
+
     // Clear saved pending ride once authenticated booking commences
     localStorage.removeItem('urban_pending_ride');
 
     const activeTier = VEHICLE_TIERS.find((t) => t.id === selectedTier) || VEHICLE_TIERS[0];
     const finalFare = getTierPrice(activeTier);
+    
+    // Stripe tokenization
+    let paymentMethodId = 'pm_card_visa'; // fallback
+    if (stripe && elements) {
+      const cardElement = elements.getElement(CardElement);
+      if (cardElement) {
+        const { error, paymentMethod } = await stripe.createPaymentMethod({
+          type: 'card',
+          card: cardElement,
+        });
+
+        if (error) {
+          setTripError(error.message || 'Failed to process card details.');
+          return;
+        }
+        
+        if (paymentMethod) {
+          paymentMethodId = paymentMethod.id;
+        }
+      }
+    }
+
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     setGeneratedOtp(otp);
     setIsIdle(false);
@@ -393,7 +430,7 @@ export default function RiderPage() {
         dropoffLng: dropoffCoords.lng,
         vehicleType: selectedTier,
         fareAmount: finalFare,
-        paymentMethodId: 'pm_card_visa',
+        paymentMethodId,
       });
       setCurrentTrip(resp);
     } catch (err: any) {
@@ -908,18 +945,31 @@ export default function RiderPage() {
                   </div>
                 </div>
 
-                {/* Payment Breakdown Card */}
-                <div className="p-3.5 rounded-xl bg-[#FCF9F8] border border-[#DCD9D9] flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center text-xs font-bold">
-                      <CreditCard className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-[#1F1F1F]">Stripe Pre-Auth Hold</span>
-                      <span className="block text-[10px] text-slate-400">•••• 4242 • Apple Pay</span>
+                {/* Payment Breakdown Card (Stripe Elements) */}
+                <div className="p-3.5 rounded-xl bg-[#FCF9F8] border border-[#DCD9D9] flex flex-col gap-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-[#276EF1] text-white flex items-center justify-center text-xs font-bold">
+                        <CreditCard className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-[#1F1F1F]">Payment Method</span>
+                        <span className="block text-[10px] text-slate-400">Securely processed by Stripe</span>
+                      </div>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-emerald-600">Pre-authorized</span>
+                  <div className="p-3 bg-white rounded-lg border border-slate-200">
+                    <CardElement options={{
+                      style: {
+                        base: {
+                          fontSize: '14px',
+                          color: '#1F1F1F',
+                          '::placeholder': { color: '#94a3b8' },
+                        },
+                        invalid: { color: '#ef4444' }
+                      }
+                    }} />
+                  </div>
                 </div>
 
                 {/* Request CTA Button */}

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	DefaultSearchRadiusKm   = 5.0  // Initial search radius in kilometers (5km)
+	DefaultSearchRadiusKm   = 50000.0  // Global search radius for local testing
 	DefaultMaxCandidates    = 10   // Maximum number of nearby candidates to pull from Redis GEOSEARCH
 	DefaultMaxOffers        = 5    // Maximum driver dispatch attempts before declaring match exhausted
 	DefaultOfferTimeoutSecs = 15   // Wait window for driver to accept/decline ride offer (15 seconds)
@@ -201,10 +201,9 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 	return nil, nil
 }
 
-// defaultSimulateDriverResponse simulates a realistic driver acceptance window.
-// In production this would block on a Redis subscription or a WebSocket event.
-// For demo: 70% acceptance rate with a 1-second simulated think-time.
-func defaultSimulateDriverResponse(ctx context.Context, driverID string) bool {
+// DefaultSimulateDriverResponse simulates a realistic driver acceptance window for testing.
+// 70% acceptance rate with a 1-second simulated think-time.
+func DefaultSimulateDriverResponse(ctx context.Context, _ string) bool {
 	// Simulate driver "thinking" about the offer
 	select {
 	case <-time.After(1 * time.Second):

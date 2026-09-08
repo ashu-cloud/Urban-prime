@@ -6,21 +6,19 @@ import (
 
 // Config stores environment parameters for the Driver Service
 type Config struct {
-	Port         string
-	HTTPPort     string
-	DatabaseDSN  string
-	RedisAddr    string
-	KafkaBrokers string
+	Port        string
+	HTTPPort    string
+	DatabaseDSN string
+	RedisAddr   string
 }
 
 // Load populates configuration from environment variables or sensible local defaults
 func Load() *Config {
 	return &Config{
-		Port:         getEnv("DRIVER_SERVICE_PORT", "50052"),
-		HTTPPort:     getEnv("DRIVER_SERVICE_HTTP_PORT", "8052"),
-		DatabaseDSN:  getEnv("POSTGRES_DSN", "postgres://cab_user:cab_password@localhost:5432/cab_booking_db?sslmode=disable"),
-		RedisAddr:    getEnv("REDIS_ADDR", "localhost:6379"),
-		KafkaBrokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
+		Port:        getEnv("DRIVER_SERVICE_PORT", "50052"),
+		HTTPPort:    getEnv("DRIVER_SERVICE_HTTP_PORT", "8052"),
+		DatabaseDSN: getEnv("POSTGRES_DSN", "postgres://cab_user:cab_password@localhost:5432/cab_booking_db?sslmode=disable"),
+		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
 	}
 }
 

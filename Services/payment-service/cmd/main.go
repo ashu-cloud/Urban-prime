@@ -75,7 +75,7 @@ func initSchema(ctx context.Context, pool *pgxpool.Pool) {
 	CREATE TABLE IF NOT EXISTS transactions (
 		id UUID PRIMARY KEY,
 		trip_id UUID NOT NULL,
-		rider_id UUID NOT NULL,
+		rider_id TEXT NOT NULL,
 		amount_cents BIGINT NOT NULL,
 		currency VARCHAR(10) NOT NULL,
 		stripe_payment_intent_id VARCHAR(255) NOT NULL,
@@ -83,6 +83,7 @@ func initSchema(ctx context.Context, pool *pgxpool.Pool) {
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
+	ALTER TABLE transactions ALTER COLUMN rider_id TYPE TEXT USING rider_id::text;
 	CREATE INDEX IF NOT EXISTS idx_transactions_trip_id ON transactions (trip_id);
 	`
 	if _, err := pool.Exec(ctx, schema); err != nil {

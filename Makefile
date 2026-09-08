@@ -61,7 +61,7 @@ logs:
 # Local development mode: Run infra in Docker, Go services + Next.js with hot-reload
 dev:
 	@echo "⚡ Starting Docker infrastructure..."
-	docker compose up -d postgres redis kafka centrifugo apisix jaeger
+	docker compose up -d postgres redis centrifugo apisix jaeger
 	@echo "⚡ Launching Go Microservices..."
 	go run ./devserver/main.go
 

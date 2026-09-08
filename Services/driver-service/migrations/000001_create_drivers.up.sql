@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS drivers (
-    driver_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    driver_id     TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
     phone         TEXT NOT NULL UNIQUE,
     email         TEXT,

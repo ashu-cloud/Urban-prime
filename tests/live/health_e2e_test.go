@@ -22,7 +22,6 @@ func TestInfrastructureHealth(t *testing.T) {
 	probes := []probe{
 		{name: "postgres", network: "tcp", addr: envOr("POSTGRES_ADDR", "127.0.0.1:5432")},
 		{name: "redis", network: "tcp", addr: envOr("REDIS_ADDR", "127.0.0.1:6379")},
-		{name: "kafka", network: "tcp", addr: envOr("KAFKA_ADDR", "127.0.0.1:9092")},
 		{name: "centrifugo", network: "tcp", addr: envOr("CENTRIFUGO_ADDR", "127.0.0.1:8000")},
 		{name: "apisix", network: "tcp", addr: envOr("APISIX_ADDR", "127.0.0.1:9080")},
 		{name: "auth-http", network: "tcp", addr: envOr("AUTH_HTTP_ADDR", "127.0.0.1:8080")},

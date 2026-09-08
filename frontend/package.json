@@ -10,6 +10,8 @@
     "test": "node --experimental-strip-types --test src/lib/fare.test.ts"
   },
   "dependencies": {
+    "@stripe/react-stripe-js": "^6.9.0",
+    "@stripe/stripe-js": "^9.15.0",
     "centrifuge": "^5.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.32.0",

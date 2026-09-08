@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Ultra deep matte obsidian slate -->
+    <radialGradient id="darkVignette" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#0d1522"/>
+      <stop offset="100%" stop-color="#05080e"/>
+    </radialGradient>
+
+    <!-- Crisp electric blue gradient -->
+    <linearGradient id="vectorBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <!-- Accent emerald gradient -->
+    <linearGradient id="vectorEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background App Icon / Favicon Plate with delicate border -->
+  <rect width="512" height="512" rx="112" fill="url(#darkVignette)"/>
+  <rect width="510" height="510" x="1" y="1" rx="111" fill="none" stroke="#1e293b" stroke-width="2"/>
+
+  <!-- Minimalist, Authentic Monogram Mark (Scalable App Icon) -->
+  <!-- Engineered with pure negative space: sharp 45° dynamic forward cuts like Uber / Stripe / Linear -->
+  <g transform="translate(116, 106)">
+    <!-- Base Ribbon (The 'U' Route Conduit) -->
+    <path d="M 20 20 
+             L 70 20 
+             L 70 180 
+             C 70 216 100 246 136 246 
+             C 172 246 202 216 202 180 
+             L 202 130 
+             L 252 130 
+             L 252 180 
+             C 252 244 200 296 136 296 
+             C 72 296 20 244 20 180 Z" 
+          fill="url(#vectorBlue)"/>
+
+    <!-- Forward Kinetic Node ('P' / Heading indicator) interlocking with precision negative space gap -->
+    <path d="M 136 10 
+             L 214 10 
+             C 246 10 270 34 270 66 
+             C 270 98 246 122 214 122 
+             L 156 122 
+             L 156 186 
+             L 106 186 
+             L 106 40 
+             C 106 23.4 119.4 10 136 10 Z 
+             M 156 74 
+             L 210 74 
+             C 215 74 219 70 219 66 
+             C 219 62 215 58 210 58 
+             L 156 58 Z" 
+          fill="#f8fafc"/>
+
+    <!-- Subtle live beacon indicator embedded in the head -->
+    <circle cx="214" cy="66" r="8" fill="#38bdf8"/>
+    <circle cx="214" cy="66" r="18" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.4"/>
+  </g>
+
+  <!-- Clean, understated brand stamp -->
+  <text x="256" y="445" 
+        text-anchor="middle" 
+        fill="#64748b" 
+        font-family="system-ui, -apple-system, 'SF Pro Display', 'Inter', sans-serif" 
+        font-size="14" 
+        font-weight="700" 
+        letter-spacing="0.3em">
+    URBAN PRIME
+  </text>
+</svg>

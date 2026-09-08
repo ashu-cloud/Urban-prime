@@ -138,6 +138,7 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 		PickupLng:     trip.Pickup.Longitude,
 		DropoffLat:    trip.Dropoff.Latitude,
 		DropoffLng:    trip.Dropoff.Longitude,
+		VehicleType:   trip.VehicleType,
 		DistanceKm:    trip.DistanceKm,
 		EstimatedFare: trip.FinalFareCents,
 		Currency:      trip.Currency,

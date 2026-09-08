@@ -61,10 +61,10 @@ func main() {
 
 	geoService := geo.NewGeoService(redisClient)
 
-	// 4. KAFKA PRODUCER
-	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
+	// 4. REDIS STREAM PRODUCER
+	producer, err := kafka.NewProducer(cfg.RedisAddr)
 	if err != nil {
-		logger.Warn(ctx, "Kafka producer initialized with warning", "error", err)
+		logger.Warn(ctx, "Redis stream producer initialized with warning", "error", err)
 	}
 	if producer != nil {
 		defer producer.Close()
@@ -73,19 +73,19 @@ func main() {
 	// 5. DISPATCH LOOP ENGINE
 	dispatchLoop := dispatch.NewDispatchLoop(geoService, repo, producer)
 
-	// 6. KAFKA CONSUMER (Listens for `trip.events.v1 { MATCHING }` to trigger dispatch loop)
+	// 6. REDIS STREAM CONSUMER (Listens for `trip.events.v1 { MATCHING }` to trigger dispatch loop)
 	dispatchAdapter := func(c context.Context, tripID string, pickupLat, pickupLng float64, vehicleType string) error {
 		_, err := dispatchLoop.FindAndDispatchDriver(c, tripID, pickupLat, pickupLng, vehicleType)
 		return err
 	}
 
-	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, "driver-service-group", dispatchAdapter)
+	consumer, err := kafka.NewConsumer(cfg.RedisAddr, "driver-service-group", dispatchAdapter)
 	if err != nil {
-		logger.Warn(ctx, "Kafka consumer init warning", "error", err)
+		logger.Warn(ctx, "Redis stream consumer init warning", "error", err)
 	}
 	if consumer != nil {
 		go consumer.Start(ctx)
-		logger.Info(ctx, "Driver Service Kafka consumer loop LIVE — ready to match trips")
+		logger.Info(ctx, "Driver Service Redis stream consumer loop LIVE — ready to match trips")
 	}
 
 	// 7. gRPC SERVICE HANDLER
@@ -140,21 +140,28 @@ func initDatabase(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	config.MaxConns = 25
 	config.MinConns = 5
 
-	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	pool, err := pgxpool.NewWithConfig(ctxTimeout, config)
-	if err != nil {
-		return nil, err
+	var pool *pgxpool.Pool
+	for attempt := 1; attempt <= 5; attempt++ {
+		ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+		pool, err = pgxpool.NewWithConfig(ctxTimeout, config)
+		if err == nil {
+			if pingErr := pool.Ping(ctxTimeout); pingErr == nil {
+				cancel()
+				logger.Info(ctx, "Connected to PostgreSQL database successfully")
+				return pool, nil
+			} else {
+				err = pingErr
+				pool.Close()
+			}
+		}
+		cancel()
+		if attempt < 5 {
+			logger.Warn(ctx, fmt.Sprintf("PostgreSQL connection attempt %d/5 failed, retrying in 2s...", attempt), "error", err)
+			time.Sleep(2 * time.Second)
+		}
 	}
 
-	if err := pool.Ping(ctxTimeout); err != nil {
-		pool.Close()
-		return nil, err
-	}
-
-	logger.Info(ctx, "Connected to PostgreSQL database successfully")
-	return pool, nil
+	return nil, err
 }
 
 func initRedis(ctx context.Context, addr string) *redis.Client {

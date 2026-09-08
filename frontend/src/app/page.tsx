@@ -282,6 +282,10 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const progressesRef = useRef<number[]>(DRIVERS_DATA.map((d) => d.initialProgress));
 
+  useEffect(() => {
+    document.title = 'Urban Prime';
+  }, []);
+
   // 60fps requestAnimationFrame loop
   useEffect(() => {
     let animId: number;
@@ -452,7 +456,7 @@ export default function Home() {
           </h1>
           
           <p className="text-[17px] md:text-[20px] text-white/90 leading-relaxed font-medium mb-10 max-w-2xl drop-shadow-[0_2px_12px_rgba(0,0,0,1)]">
-            A production-grade distributed backend ecosystem built with Go microservices, Apache Kafka event streaming, Redis geospatial indexing, and Saga-orchestrated transactions.
+            A production-grade distributed backend ecosystem built with Go microservices, Redis Streams event bus, Redis geospatial indexing, and Saga-orchestrated transactions.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 items-center">
@@ -540,7 +544,7 @@ export default function Home() {
             {[
               { num: '01', title: 'Request Intent', desc: 'Rider inputs pickup & dropoff. APISIX gateway routes to Trip Saga Service.' },
               { num: '02', title: 'Spatial Query', desc: 'Redis Geospatial searches nearest available drivers in real time.' },
-              { num: '03', title: 'Event Fan-out', desc: 'Kafka event streams broadcast ride requests directly to Driver Cockpits.' },
+              { num: '03', title: 'Event Fan-out', desc: 'Redis Stream events broadcast ride requests to Driver Cockpits via XREADGROUP consumer groups.' },
               { num: '04', title: 'Saga Settlement', desc: 'Saga orchestrator locks payment authorization and confirms reservation.' },
             ].map((step, i) => (
               <div key={i} className="border-l border-white/10 pl-5 py-2 flex flex-col justify-between">
@@ -599,8 +603,8 @@ export default function Home() {
               <span className="text-xs uppercase tracking-widest text-white/40 font-mono">Go Microservices & gRPC</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-mono text-3xl md:text-4xl font-normal text-white tracking-tight mb-1">Kafka + Redis</span>
-              <span className="text-xs uppercase tracking-widest text-white/40 font-mono">Event Streams & Geospatial</span>
+              <span className="font-mono text-3xl md:text-4xl font-normal text-white tracking-tight mb-1">Redis Streams</span>
+              <span className="text-xs uppercase tracking-widest text-white/40 font-mono">Event Bus & Geospatial</span>
             </div>
             <div className="flex flex-col">
               <span className="font-mono text-3xl md:text-4xl font-normal text-white tracking-tight mb-1">Saga Pattern</span>
@@ -617,7 +621,7 @@ export default function Home() {
             </div>
             <h2 className="text-2xl md:text-3xl font-medium text-white tracking-tight mb-2">Microservice Ecosystem</h2>
             <p className="text-white/50 text-sm font-normal max-w-xl">
-              Decoupled, event-driven Go services communicating via low-latency gRPC and asynchronous Kafka event streams.
+              Decoupled, event-driven Go services communicating via low-latency gRPC and asynchronous Redis Stream events.
             </p>
           </div>
 
@@ -629,15 +633,15 @@ export default function Home() {
                 badge: 'Saga Orchestrator',
                 badgeColor: 'text-amber-400 border-amber-500/30 bg-amber-500/10',
                 desc: 'Orchestrates the distributed trip state machine (PENDING → MATCHING → ACCEPTED → IN_PROGRESS → COMPLETED) and executes compensating transactions on failure.',
-                stack: ['Go 1.22', 'PostgreSQL 16', 'Kafka', 'OSRM Engine'],
+                stack: ['Go 1.22', 'PostgreSQL 16', 'Redis Streams', 'OSRM Engine'],
               },
               {
                 name: 'Location Service',
                 port: ':50053',
                 badge: 'Zero-DB Pipeline',
                 badgeColor: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
-                desc: 'Ingests continuous GPS driver pings directly into Redis in-memory GEO pipelines (GEOADD) and Kafka streams, bypassing relational DB to eliminate disk I/O bottlenecks.',
-                stack: ['Go 1.22', 'Redis Geo', 'Kafka Pub/Sub'],
+                desc: 'Ingests continuous GPS driver pings directly into Redis in-memory GEO pipelines (GEOADD) and Redis Streams (XADD), bypassing relational DB to eliminate disk I/O bottlenecks.',
+                stack: ['Go 1.22', 'Redis Geo', 'Redis Streams'],
               },
               {
                 name: 'Driver Service',
@@ -661,7 +665,7 @@ export default function Home() {
                 badge: 'WebSocket Push',
                 badgeColor: 'text-rose-400 border-rose-500/30 bg-rose-500/10',
                 desc: 'Powered by Centrifugo to multiplex 100k+ concurrent client WebSocket channels, streaming real-time driver coordinates and dispatch states without blocking Go routines.',
-                stack: ['Centrifugo', 'WebSockets', 'Redis PUB/SUB'],
+                stack: ['Centrifugo', 'WebSockets', 'Redis Streams'],
               },
               {
                 name: 'API Gateway',
@@ -714,7 +718,7 @@ export default function Home() {
               </div>
               <h3 className="text-lg font-medium text-white mb-2 tracking-tight">Zero-DB GPS Firehose Ingestion</h3>
               <p className="text-sm text-white/50 leading-relaxed font-normal">
-                Continuous driver location beacons (every 3 seconds) bypass PostgreSQL completely. Location Service ingests updates straight to in-memory Redis GEO structures via pipelined commands and streams to Kafka, reducing relational database I/O to zero.
+                Continuous driver location beacons (every 3 seconds) bypass PostgreSQL completely. Location Service ingests updates straight to in-memory Redis GEO structures via pipelined commands and appends to Redis Streams (XADD), reducing relational database I/O to zero.
               </p>
             </div>
 
@@ -734,7 +738,7 @@ export default function Home() {
               </div>
               <h3 className="text-lg font-medium text-white mb-2 tracking-tight">Saga Distributed Transaction Compensation</h3>
               <p className="text-sm text-white/50 leading-relaxed font-normal">
-                Avoids rigid 2-Phase Commit (2PC) locks. If a driver rejects or times out, the Saga Orchestrator dispatches automated compensation events across Kafka to release the payment authorization hold and seamlessly re-queue the rider.
+                Avoids rigid 2-Phase Commit (2PC) locks. If a driver rejects or times out, the Saga Orchestrator dispatches automated compensation events via Redis Streams to release the payment authorization hold and seamlessly re-queue the rider.
               </p>
             </div>
 
@@ -760,7 +764,7 @@ export default function Home() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
             {[
               { label: 'Go (Golang)', sub: 'Microservices & gRPC' },
-              { label: 'Apache Kafka', sub: 'Event Streaming' },
+              { label: 'Redis Streams', sub: 'Event Bus (XADD/XREADGROUP)' },
               { label: 'Redis 7', sub: 'Geo & In-Memory Cache' },
               { label: 'PostgreSQL 16', sub: 'Relational Store' },
               { label: 'Apache APISIX', sub: 'API Gateway' },
