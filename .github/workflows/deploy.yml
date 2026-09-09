@@ -24,7 +24,11 @@ jobs:
           go-version: "1.22"
 
       - name: Run unit tests
-        run: go test ./Services/... ./pkg/...
+        run: |
+          for module in $(go work edit -json | jq -r '.Use[].DiskPath'); do
+            echo "Testing module: $module"
+            (cd "$module" && go test ./...)
+          done
 
   # ─── Step 2: Build & push all service images ──────────────────────
   build-and-push:
