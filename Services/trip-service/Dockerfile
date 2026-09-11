@@ -8,7 +8,9 @@ RUN apk add --no-cache git
 COPY go.work go.work.sum ./
 COPY pkg/ ./pkg/
 COPY proto/ ./proto/
-COPY Services/trip-service/ ./Services/trip-service/
+COPY Services/ ./Services/
+COPY devserver/ ./devserver/
+COPY tests/ ./tests/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
     -o /bin/trip-service ./Services/trip-service/cmd/main.go

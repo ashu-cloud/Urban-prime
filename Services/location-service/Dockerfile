@@ -8,7 +8,9 @@ RUN apk add --no-cache git
 COPY go.work go.work.sum ./
 COPY pkg/ ./pkg/
 COPY proto/ ./proto/
-COPY Services/location-service/ ./Services/location-service/
+COPY Services/ ./Services/
+COPY devserver/ ./devserver/
+COPY tests/ ./tests/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
     -o /bin/location-service ./Services/location-service/cmd/main.go

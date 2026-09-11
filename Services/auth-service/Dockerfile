@@ -12,7 +12,9 @@ COPY pkg/ ./pkg/
 COPY proto/ ./proto/
 
 # Copy only auth-service source
-COPY Services/auth-service/ ./Services/auth-service/
+COPY Services/ ./Services/
+COPY devserver/ ./devserver/
+COPY tests/ ./tests/
 
 # Build the binary (statically linked, no CGO)
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \

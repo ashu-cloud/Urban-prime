@@ -8,7 +8,9 @@ RUN apk add --no-cache git
 COPY go.work go.work.sum ./
 COPY pkg/ ./pkg/
 COPY proto/ ./proto/
-COPY Services/notification-service/ ./Services/notification-service/
+COPY Services/ ./Services/
+COPY devserver/ ./devserver/
+COPY tests/ ./tests/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
     -o /bin/notification-service ./Services/notification-service/cmd/main.go
