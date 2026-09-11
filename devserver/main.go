@@ -134,14 +134,15 @@ func startGateway() {
 	}
 
 	targets := map[string]string{
-		"/auth":     "http://localhost:8080",
-		"/api/v1/auth": "http://localhost:8080",
-		"/trip":     "http://localhost:8051",
-		"/api/v1/trip": "http://localhost:8051",
-		"/driver":   "http://localhost:8052",
-		"/api/v1/driver": "http://localhost:8052",
-		"/location": "http://localhost:8053",
-		"/api/v1/location": "http://localhost:8053",
+		"/auth":              "http://localhost:8080",
+		"/api/v1/auth":       "http://localhost:8080",
+		"/trip":              "http://localhost:8051",
+		"/api/v1/trip":       "http://localhost:8051",
+		"/driver":            "http://localhost:8052",
+		"/api/v1/driver":     "http://localhost:8052",
+		"/api/v1/drivers":    "http://localhost:8052",
+		"/location":          "http://localhost:8053",
+		"/api/v1/location":   "http://localhost:8053",
 	}
 
 	mux := http.NewServeMux()
@@ -151,48 +152,50 @@ func startGateway() {
 		targetURL, _ := url.Parse(target)
 		proxy := httputil.NewSingleHostReverseProxy(targetURL)
 		
-		// If the target URL has a path (e.g., if we were proxying /api/v1/auth -> http://localhost:8080/auth), 
-		// we need to customize the Director. But here target is just http://localhost:8080
 		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
 			originalDirector(req)
-			// Rewrite /api/v1/xxx to /xxx
 			if strings.HasPrefix(req.URL.Path, "/api/v1") {
+				// Strip /api/v1/drivers -> /drivers, etc.
 				req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/v1")
 			}
 		}
 
-		// Ensure ReverseProxy adds CORS headers to responses
-		proxy.ModifyResponse = func(r *http.Response) error {
-			r.Header.Set("Access-Control-Allow-Origin", "*")
-			r.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			r.Header.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			return nil
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write([]byte(fmt.Sprintf("Gateway Error: %v", err)))
 		}
 
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Handle preflight directly
-			if r.Method == "OPTIONS" {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			proxy.ServeHTTP(w, r)
-		})
+		mux.Handle(prefixCopy+"/", proxy)
 		
-		mux.Handle(prefixCopy+"/", handler)
+		// Exact match fallback for missing trailing slash on exact endpoints
+		if !strings.HasSuffix(prefixCopy, "/") {
+			mux.Handle(prefixCopy, proxy)
+		}
 	}
 
-	// Healthcheck endpoint for Render
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
+	// Global CORS Middleware
+	corsMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
 	fmt.Printf("%s%s🌐 Built-in API Gateway & CORS Proxy listening on port %s%s\n", Bold, Magenta, port, Reset)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(":"+port, corsMiddleware(mux)); err != nil {
 		fmt.Printf("Gateway error: %v\n", err)
 	}
 }
