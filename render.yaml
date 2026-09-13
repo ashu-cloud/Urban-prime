@@ -18,7 +18,7 @@ services:
     name: urbanprime-auth
     runtime: image
     image:
-      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/auth-service:latest
+      url: ghcr.io/ashu-cloud/urbanprime/auth-service:latest
     plan: free
     envVars:
       - key: AUTH_SERVICE_HTTP_PORT
@@ -35,7 +35,7 @@ services:
     name: urbanprime-trip
     runtime: image
     image:
-      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/trip-service:latest
+      url: ghcr.io/ashu-cloud/urbanprime/trip-service:latest
     plan: free
     envVars:
       - key: TRIP_SERVICE_HTTP_PORT
@@ -62,7 +62,7 @@ services:
     name: urbanprime-driver
     runtime: image
     image:
-      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/driver-service:latest
+      url: ghcr.io/ashu-cloud/urbanprime/driver-service:latest
     plan: free
     envVars:
       - key: DRIVER_SERVICE_HTTP_PORT
@@ -81,7 +81,7 @@ services:
     name: urbanprime-location
     runtime: image
     image:
-      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/location-service:latest
+      url: ghcr.io/ashu-cloud/urbanprime/location-service:latest
     plan: free
     envVars:
       - key: LOCATION_SERVICE_HTTP_PORT
@@ -98,7 +98,7 @@ services:
     name: urbanprime-payment
     runtime: image
     image:
-      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/payment-service:latest
+      url: ghcr.io/ashu-cloud/urbanprime/payment-service:latest
     plan: free
     envVars:
       - key: PAYMENT_SERVICE_PORT
@@ -113,7 +113,7 @@ services:
     name: urbanprime-notification
     runtime: image
     image:
-      url: ghcr.io/YOUR_GITHUB_USERNAME/urbanprime/notification-service:latest
+      url: ghcr.io/ashu-cloud/urbanprime/notification-service:latest
     plan: free
     envVars:
       - key: KAFKA_BROKERS
