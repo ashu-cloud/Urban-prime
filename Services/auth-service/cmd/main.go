@@ -27,6 +27,21 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "https://urban-prime-seven.vercel.app")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	ctx := context.Background()
 	cfg := config.Load()
@@ -65,14 +80,18 @@ func main() {
 	httpHandler := handler.NewHTTPHandler(repo, tokenManager)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/auth/register", httpHandler.Register)
+	mux.HandleFunc("/api/v1/auth/register", httpHandler.Register)
 	mux.HandleFunc("/auth/login", httpHandler.Login)
+	mux.HandleFunc("/api/v1/auth/login", httpHandler.Login)
 	mux.HandleFunc("/auth/refresh", httpHandler.Refresh)
+	mux.HandleFunc("/api/v1/auth/refresh", httpHandler.Refresh)
 	mux.HandleFunc("/health", httpHandler.Health)
 	mux.HandleFunc("/auth/health", httpHandler.Health)
+	mux.HandleFunc("/api/v1/health", httpHandler.Health)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.HTTPPort),
-		Handler: mux,
+		Handler: corsMiddleware(mux),
 	}
 
 	go func() {
