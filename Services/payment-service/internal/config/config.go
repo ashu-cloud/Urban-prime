@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -24,6 +25,7 @@ func Load() *Config {
 
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
+		v = strings.TrimSpace(v)
 		if v != "" {
 			return v
 		}

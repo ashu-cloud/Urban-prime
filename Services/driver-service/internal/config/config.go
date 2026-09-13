@@ -1,7 +1,7 @@
 package config
 
-import (
 	"os"
+	"strings"
 )
 
 // Config stores environment parameters for the Driver Service
@@ -23,7 +23,7 @@ func Load() *Config {
 }
 
 func getEnv(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
+	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
 		return val
 	}
 	return defaultVal

@@ -44,8 +44,8 @@ services:
         value: "50051"
       - key: POSTGRES_DSN
         sync: false
-      - key: KAFKA_BROKERS
-        sync: false   # From Upstash Kafka
+      - key: REDIS_ADDR
+        sync: false   # From Upstash Redis
       - key: DRIVER_SERVICE_ADDR
         fromService:
           name: urbanprime-driver
@@ -73,8 +73,6 @@ services:
         sync: false
       - key: REDIS_ADDR
         sync: false   # From Upstash Redis (format: rediss://...:port)
-      - key: KAFKA_BROKERS
-        sync: false
 
   # ─── Location Service ─────────────────────────────────────────────
   - type: web
@@ -89,8 +87,6 @@ services:
       - key: LOCATION_SERVICE_PORT
         value: "50053"
       - key: REDIS_ADDR
-        sync: false
-      - key: KAFKA_BROKERS
         sync: false
 
   # ─── Payment Service ──────────────────────────────────────────────
@@ -116,7 +112,7 @@ services:
       url: ghcr.io/ashu-cloud/urbanprime/notification-service:latest
     plan: free
     envVars:
-      - key: KAFKA_BROKERS
+      - key: REDIS_ADDR
         sync: false
       - key: CENTRIFUGO_URL
         sync: false   # URL of your centrifugo Render service
