@@ -139,4 +139,6 @@ services:
         generateValue: true
       - key: CENTRIFUGO_ADMIN_SECRET
         generateValue: true
+      - key: CENTRIFUGO_ALLOWED_ORIGINS
+        value: "https://urban-prime-seven.vercel.app"
     startCommand: centrifugo --config=/centrifugo/config.json
