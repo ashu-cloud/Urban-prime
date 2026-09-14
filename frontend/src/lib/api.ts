@@ -5,7 +5,7 @@
 
 import { TripLifecycleStage } from './socket';
 
-const APISIX_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9080';
+const APISIX_BASE_URL = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:9080');
 
 export interface UserSession {
   userId: string;
