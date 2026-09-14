@@ -22,36 +22,7 @@ import {
   Check,
 } from 'lucide-react';
 
-const VEHICLE_TIERS = [
-  {
-    id: 'PREMIUM',
-    name: 'Prime Black',
-    subtitle: 'Luxury Electric / Executive Sedan',
-    icon: '⚡',
-    examples: 'Tesla Model S, Mercedes EQE, BMW i4, Lucid Air',
-  },
-  {
-    id: 'SEDAN',
-    name: 'Urban Comfort',
-    subtitle: 'Standard 4-Door Hybrid / Sedan',
-    icon: '🚘',
-    examples: 'Toyota Camry, Honda Accord, Hyundai Ioniq',
-  },
-  {
-    id: 'SUV',
-    name: 'Executive SUV',
-    subtitle: 'Spacious 6+ Passenger SUV',
-    icon: '🚙',
-    examples: 'Cadillac Escalade, Chevy Suburban, Lincoln Navigator',
-  },
-  {
-    id: 'BIKE',
-    name: 'Prime Express',
-    subtitle: 'Rapid Solo Courier',
-    icon: '🛵',
-    examples: 'Zero Electric, BMW CE 04, Ducati Scrambler',
-  },
-];
+import { VEHICLE_TIERS } from '@/lib/constants';
 
 export default function DriverSignupPage() {
   const router = useRouter();
