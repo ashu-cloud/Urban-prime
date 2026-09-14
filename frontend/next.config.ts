@@ -3,21 +3,42 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   async rewrites() {
     return [
+      // ─── Auth Service ────────────────────────────────────
       {
         source: '/auth/:path*',
         destination: 'https://urbanprime-auth.onrender.com/auth/:path*',
       },
+      // ─── Trip Service ────────────────────────────────────
       {
-        source: '/trip/:path*',
-        destination: 'https://urbanprime-trip.onrender.com/trip/:path*',
+        source: '/api/v1/trips/:path*',
+        destination: 'https://urbanprime-trip.onrender.com/api/v1/trips/:path*',
       },
       {
-        source: '/driver/:path*',
-        destination: 'https://urbanprime-driver.onrender.com/driver/:path*',
+        source: '/trips/:path*',
+        destination: 'https://urbanprime-trip.onrender.com/trips/:path*',
+      },
+      // ─── Driver Service ──────────────────────────────────
+      {
+        source: '/api/v1/drivers/:path*',
+        destination: 'https://urbanprime-driver.onrender.com/api/v1/drivers/:path*',
       },
       {
-        source: '/location/:path*',
-        destination: 'https://urbanprime-location.onrender.com/location/:path*',
+        source: '/api/v1/dispatch/:path*',
+        destination: 'https://urbanprime-driver.onrender.com/api/v1/dispatch/:path*',
+      },
+      {
+        source: '/drivers/:path*',
+        destination: 'https://urbanprime-driver.onrender.com/drivers/:path*',
+      },
+      // ─── Location Service ─────────────────────────────────
+      {
+        source: '/api/v1/location/:path*',
+        destination: 'https://urbanprime-location.onrender.com/api/v1/location/:path*',
+      },
+      // ─── Payment Service ──────────────────────────────────
+      {
+        source: '/api/v1/payments/:path*',
+        destination: 'https://urbanprime-payment.onrender.com/api/v1/payments/:path*',
       },
       {
         source: '/payment/:path*',

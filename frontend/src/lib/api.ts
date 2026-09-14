@@ -1,11 +1,18 @@
 /**
- * API Client for Urban Prime connecting to APISIX Gateway (http://localhost:9080)
- * Includes graceful mock fallbacks for standalone UI testing and simulation.
+ * API Client for Urban Prime.
+ *
+ * In production (Vercel), all calls use relative paths (e.g. /auth/login).
+ * Vercel rewrites in next.config.ts proxy them to the correct Render service.
+ *
+ * In local dev, NEXT_PUBLIC_API_URL can be set to http://localhost:9080 (APISIX)
+ * or left unset to hit each service directly via the devserver.
  */
 
 import { TripLifecycleStage } from './socket';
 
-const APISIX_BASE_URL = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:9080');
+// In production on Vercel this is '' so all paths are relative (e.g. /auth/login)
+// which Vercel rewrites handle. Locally set NEXT_PUBLIC_API_URL=http://localhost:9080.
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:9080');
 
 export interface UserSession {
   userId: string;
@@ -150,192 +157,126 @@ async function extractCleanErrorMessage(res: Response, defaultMsg: string): Prom
   }
 }
 
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, init);
+  return res;
+}
+
 // API Methods
 export const api = {
-  // 1. Rider Login (/auth/login with role=RIDER)
+  // 1. Rider Login
   async loginRider(email: string, password?: string): Promise<UserSession> {
     const cleanEmail = email.trim().toLowerCase();
-
-    // Try APISIX gateway first, then fallback to direct auth service
-    const endpoints = [
-      `${APISIX_BASE_URL}/auth/login`,
-      `${APISIX_BASE_URL}/api/v1/auth/login`,
-      'http://localhost:8080/auth/login',
-    ];
-
-    let isNetworkError = false;
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail, role: 'RIDER', password }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const session: UserSession = {
-            userId: data.user?.user_id || data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
-            email: cleanEmail,
-            role: 'RIDER',
-            token: data.access_token || data.accessToken || data.token || 'jwt_token',
-            name: data.user?.full_name || data.user?.fullName || data.name || cleanEmail.split('@')[0],
-            phone: data.user?.phone || data.phone,
-          };
-          setStoredRiderSession(session);
-          return session;
-        } else if (res.status >= 500) {
-          // Gateway or service error, try next endpoint
-          isNetworkError = true;
-          continue;
-        } else {
-          // Explicit 401 or 400 rejection from auth-service
-          const errMsg = await extractCleanErrorMessage(
-            res,
-            'Invalid email or password. Please check your credentials or create an account.'
-          );
-          throw new Error(errMsg);
-        }
-      } catch (err: any) {
-        if (err.message && !err.message.includes('fetch') && !err.message.includes('NetworkError') && !err.message.includes('Failed to fetch')) {
-          throw err;
-        }
-        isNetworkError = true;
-      }
-    }
-
-    if (isNetworkError) {
+    let res: Response;
+    try {
+      res = await apiFetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, role: 'RIDER', password }),
+      });
+    } catch {
       throw new Error('Network error: Unable to reach authentication service. Please check your connection.');
     }
 
-    // For any other non-existent/unregistered email, strictly reject!
-    throw new Error(
-      'Account not found or password incorrect. Please create an account or verify your credentials.'
+    if (res.ok) {
+      const data = await res.json();
+      const session: UserSession = {
+        userId: data.user?.user_id || data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
+        email: cleanEmail,
+        role: 'RIDER',
+        token: data.access_token || data.accessToken || data.token || 'jwt_token',
+        name: data.user?.full_name || data.user?.fullName || data.name || cleanEmail.split('@')[0],
+        phone: data.user?.phone || data.phone,
+      };
+      setStoredRiderSession(session);
+      return session;
+    }
+
+    const errMsg = await extractCleanErrorMessage(
+      res,
+      'Invalid email or password. Please check your credentials or create an account.'
     );
+    throw new Error(errMsg);
   },
 
-  // 2. Rider Registration (/auth/register)
+  // 2. Rider Registration
   async registerRider(email: string, name: string, password?: string, phone?: string): Promise<UserSession> {
     const cleanEmail = email.trim().toLowerCase();
-    const endpoints = [
-      `${APISIX_BASE_URL}/auth/register`,
-      `${APISIX_BASE_URL}/api/v1/auth/register`,
-      'http://localhost:8080/auth/register',
-    ];
-
-    let isNetworkError = false;
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: cleanEmail,
-            full_name: name,
-            password: password || 'SecurePassword123!',
-            phone: phone || `+1555${Math.floor(1000000 + Math.random() * 9000000)}`,
-            role: 'RIDER',
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const session: UserSession = {
-            userId: data.user?.user_id || data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
-            email: cleanEmail,
-            role: 'RIDER',
-            token: data.access_token || data.accessToken || data.token || 'mock_rider_jwt',
-            name: data.user?.full_name || data.user?.fullName || name,
-            phone: data.user?.phone || phone,
-          };
-          setStoredRiderSession(session);
-          return session;
-        } else if (res.status >= 500) {
-          isNetworkError = true;
-          continue;
-        } else {
-          const errMsg = await extractCleanErrorMessage(
-            res,
-            'Registration failed. An account with this email may already exist.'
-          );
-          throw new Error(errMsg);
-        }
-      } catch (err: any) {
-        if (err.message && !err.message.includes('fetch') && !err.message.includes('NetworkError') && !err.message.includes('Failed to fetch')) {
-          throw err;
-        }
-        isNetworkError = true;
-      }
-    }
-
-    if (isNetworkError) {
+    let res: Response;
+    try {
+      res = await apiFetch('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          full_name: name,
+          password: password || 'SecurePassword123!',
+          phone: phone || `+1555${Math.floor(1000000 + Math.random() * 9000000)}`,
+          role: 'RIDER',
+        }),
+      });
+    } catch {
       throw new Error('Network error: Unable to reach registration service. Please check your connection.');
     }
-    
-    throw new Error('Registration failed due to an unknown error.');
-  },
 
-  // 3. Driver Login (/auth/login with role=DRIVER)
-  async loginDriver(email: string, password?: string): Promise<UserSession> {
-    const cleanEmail = email.trim().toLowerCase();
-    const endpoints = [
-      `${APISIX_BASE_URL}/auth/login`,
-      `${APISIX_BASE_URL}/api/v1/auth/login`,
-      'http://localhost:8080/auth/login',
-    ];
-
-    let isNetworkError = false;
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail, role: 'DRIVER', password }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const session: UserSession = {
-            userId: data.user?.user_id || data.user?.id || data.userId || `drv_${Date.now().toString().slice(-4)}`,
-            email: cleanEmail,
-            role: 'DRIVER',
-            token: data.access_token || data.accessToken || data.token || 'mock_driver_jwt',
-            name: data.user?.full_name || data.user?.fullName || data.name || cleanEmail.split('@')[0],
-            vehicleModel: data.vehicleModel || 'Executive Fleet Vehicle',
-            vehiclePlate: data.vehiclePlate || 'NYC-PRIME',
-            vehicleType: (data.vehicleType as any) || 'PREMIUM',
-            rating: data.rating || 5.0,
-          };
-          setStoredDriverSession(session);
-          return session;
-        } else if (res.status >= 500) {
-          isNetworkError = true;
-          continue;
-        } else {
-          const errMsg = await extractCleanErrorMessage(
-            res,
-            'Invalid partner credentials. Please check your work email and password.'
-          );
-          throw new Error(errMsg);
-        }
-      } catch (err: any) {
-        if (err.message && !err.message.includes('fetch') && !err.message.includes('NetworkError') && !err.message.includes('Failed to fetch')) {
-          throw err;
-        }
-        isNetworkError = true;
-      }
+    if (res.ok) {
+      const data = await res.json();
+      const session: UserSession = {
+        userId: data.user?.user_id || data.user?.id || data.userId || `rid_${Date.now().toString().slice(-4)}`,
+        email: cleanEmail,
+        role: 'RIDER',
+        token: data.access_token || data.accessToken || data.token || 'mock_rider_jwt',
+        name: data.user?.full_name || data.user?.fullName || name,
+        phone: data.user?.phone || phone,
+      };
+      setStoredRiderSession(session);
+      return session;
     }
 
-    if (isNetworkError) {
+    const errMsg = await extractCleanErrorMessage(
+      res,
+      'Registration failed. An account with this email may already exist.'
+    );
+    throw new Error(errMsg);
+  },
+
+  // 3. Driver Login
+  async loginDriver(email: string, password?: string): Promise<UserSession> {
+    const cleanEmail = email.trim().toLowerCase();
+    let res: Response;
+    try {
+      res = await apiFetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, role: 'DRIVER', password }),
+      });
+    } catch {
       throw new Error('Network error: Unable to reach authentication service. Please check your connection.');
     }
 
-    throw new Error(
-      'Partner account not found or password incorrect. Please apply as a Driver Partner or check credentials.'
+    if (res.ok) {
+      const data = await res.json();
+      const session: UserSession = {
+        userId: data.user?.user_id || data.user?.id || data.userId || `drv_${Date.now().toString().slice(-4)}`,
+        email: cleanEmail,
+        role: 'DRIVER',
+        token: data.access_token || data.accessToken || data.token || 'mock_driver_jwt',
+        name: data.user?.full_name || data.user?.fullName || data.name || cleanEmail.split('@')[0],
+        vehicleModel: data.vehicleModel || 'Executive Fleet Vehicle',
+        vehiclePlate: data.vehiclePlate || 'NYC-PRIME',
+        vehicleType: (data.vehicleType as any) || 'PREMIUM',
+        rating: data.rating || 5.0,
+      };
+      setStoredDriverSession(session);
+      return session;
+    }
+
+    const errMsg = await extractCleanErrorMessage(
+      res,
+      'Invalid partner credentials. Please check your work email and password.'
     );
+    throw new Error(errMsg);
   },
 
   // Legacy login method routing
@@ -346,14 +287,14 @@ export const api = {
     return this.loginRider(email, password);
   },
 
-  // 4. Driver Onboarding / Registration (/api/v1/drivers/register)
+  // 4. Driver Onboarding / Registration
   async registerDriver(req: DriverOnboardingRequest): Promise<UserSession> {
     const fullVehicleModel = `${req.vehicleMake} ${req.vehicleModel} (${req.vehicleColor || 'Obsidian Black'})`;
     const driverId = `drv_${Date.now().toString().slice(-4)}`;
 
     try {
       // Register in Auth Service
-      await fetch(`${APISIX_BASE_URL}/api/v1/auth/register`, {
+      await apiFetch('/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -366,7 +307,7 @@ export const api = {
       });
 
       // Register in Driver Service
-      await fetch(`${APISIX_BASE_URL}/api/v1/drivers`, {
+      await apiFetch('/api/v1/drivers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -378,6 +319,7 @@ export const api = {
           vehicle_model: fullVehicleModel,
         }),
       });
+
       const session: UserSession = {
         userId: driverId,
         email: req.email,
@@ -397,10 +339,10 @@ export const api = {
     }
   },
 
-  // 3. Trip Service via APISIX (/api/v1/trips)
+  // 5. Trip Service (/api/v1/trips)
   async createTrip(req: TripRequest): Promise<TripResponse> {
     try {
-      const res = await fetch(`${APISIX_BASE_URL}/api/v1/trips`, {
+      const res = await apiFetch('/api/v1/trips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
@@ -415,10 +357,10 @@ export const api = {
     }
   },
 
-  // 4. Driver Location Telemetry (/api/v1/location/driver)
+  // 6. Driver Location Telemetry (/api/v1/location/driver)
   async updateLocation(driverId: string, lat: number, lng: number, heading: number) {
     try {
-      const res = await fetch(`${APISIX_BASE_URL}/api/v1/location/driver`, {
+      const res = await apiFetch('/api/v1/location/driver', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ driverId, latitude: lat, longitude: lng, heading }),
@@ -431,51 +373,36 @@ export const api = {
     }
   },
 
-  // 5. Get Trip Details (/api/v1/trips/{id})
+  // 7. Get Trip Details (/api/v1/trips/{id})
   async getTrip(tripId: string): Promise<TripResponse> {
-    const endpoints = [
-      `${APISIX_BASE_URL}/api/v1/trips/${tripId}`,
-      `${APISIX_BASE_URL}/trips/${tripId}`,
-      `http://localhost:8051/api/v1/trips/${tripId}`,
-    ];
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          return await res.json();
-        }
-      } catch (err) {
-        // Continue to next endpoint
+    try {
+      const res = await apiFetch(`/api/v1/trips/${tripId}`);
+      if (res.ok) {
+        return await res.json();
       }
+    } catch {
+      // fall through
     }
     throw new Error(`Failed to fetch trip details for ${tripId}`);
   },
 
-  // 6. Respond to Dispatch Offer (/api/v1/drivers/{id}/dispatch-response)
+  // 8. Respond to Dispatch Offer (/api/v1/drivers/{id}/dispatch-response)
   async respondToDispatch(driverId: string, tripId: string, accept: boolean): Promise<any> {
-    const endpoints = [
-      `${APISIX_BASE_URL}/api/v1/drivers/${driverId}/dispatch-response`,
-      `${APISIX_BASE_URL}/api/v1/dispatch/${driverId}/respond`,
-      `http://localhost:8052/api/v1/drivers/${driverId}/dispatch-response`,
-      `http://localhost:8052/api/v1/dispatch/${driverId}/respond`,
-    ];
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            driver_id: driverId,
-            trip_id: tripId,
-            accepted: accept,
-          }),
-        });
-        if (res.ok) {
-          return await res.json();
-        }
-      } catch (err) {
-        // Continue to next endpoint
+    try {
+      const res = await apiFetch(`/api/v1/drivers/${driverId}/dispatch-response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          driver_id: driverId,
+          trip_id: tripId,
+          accepted: accept,
+        }),
+      });
+      if (res.ok) {
+        return await res.json();
       }
+    } catch {
+      // fall through
     }
     throw new Error('Failed to send dispatch response to driver service');
   },
