@@ -294,7 +294,7 @@ export const api = {
 
     try {
       // Register in Auth Service
-      await apiFetch('/auth/register', {
+      const authRes = await apiFetch('/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -306,8 +306,13 @@ export const api = {
         }),
       });
 
+      if (!authRes.ok) {
+        const msg = await extractCleanErrorMessage(authRes, 'Driver authentication registration failed.');
+        throw new Error(msg);
+      }
+
       // Register in Driver Service
-      await apiFetch('/api/v1/drivers', {
+      const driverRes = await apiFetch('/api/v1/drivers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -319,6 +324,11 @@ export const api = {
           vehicle_model: fullVehicleModel,
         }),
       });
+
+      if (!driverRes.ok) {
+        const msg = await extractCleanErrorMessage(driverRes, 'Driver profile registration failed.');
+        throw new Error(msg);
+      }
 
       const session: UserSession = {
         userId: driverId,
@@ -335,7 +345,7 @@ export const api = {
       setStoredSession(session);
       return session;
     } catch (err: any) {
-      throw new Error('Failed to register driver: ' + err.message);
+      throw new Error(err.message || 'Failed to register driver');
     }
   },
 
