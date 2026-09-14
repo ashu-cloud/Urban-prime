@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -35,6 +36,7 @@ func main() {
 	logger.Info(ctx, "Initializing Notification Service (Centrifugo WebSocket Gateway)...",
 		"centrifugo_url", cfg.CentrifugoURL,
 		"redis_addr", cfg.RedisAddr,
+		"port", cfg.Port,
 	)
 
 	// 1. CENTRIFUGO HTTP CLIENT — for pushing real-time WebSocket messages
@@ -53,12 +55,36 @@ func main() {
 		logger.Info(ctx, "Redis stream consumer started — real-time event pipeline is LIVE 🚀")
 	}
 
-	// 4. GRACEFUL SHUTDOWN — wait for SIGINT or SIGTERM
+	// 4. HTTP HEALTH SERVER — satisfies Render Web Service port check on Free plan
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Notification Service is running"))
+	})
+
+	server := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: mux,
+	}
+
+	go func() {
+		logger.Info(ctx, "Starting HTTP health server", "port", cfg.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Warn(ctx, "HTTP health server error", "error", err)
+		}
+	}()
+
+	// 5. GRACEFUL SHUTDOWN — wait for SIGINT or SIGTERM
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info(ctx, "Shutting down Notification Service gracefully...")
 	cancel() // signal the stream consumer loop to stop
+	_ = server.Shutdown(context.Background())
 	logger.Info(ctx, "Notification Service stopped cleanly")
 }

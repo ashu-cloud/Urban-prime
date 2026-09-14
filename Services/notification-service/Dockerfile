@@ -24,6 +24,6 @@ WORKDIR /app
 
 COPY --from=builder /bin/notification-service .
 
-EXPOSE 50055
+EXPOSE 8080 50055
 
 CMD ["./notification-service"]

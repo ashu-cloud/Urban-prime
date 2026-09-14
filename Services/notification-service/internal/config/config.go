@@ -15,6 +15,8 @@ type Config struct {
 	CentrifugoURL string
 	// CentrifugoAPIKey — shared secret for Centrifugo server-to-server HTTP publish API
 	CentrifugoAPIKey string
+	// Port — HTTP port for health checks
+	Port string
 }
 
 // Load reads configuration from environment variables with local dev defaults
@@ -24,6 +26,7 @@ func Load() *Config {
 		ConsumerGroupID:  getEnv("CONSUMER_GROUP_ID", "notification-service"),
 		CentrifugoURL:    getEnv("CENTRIFUGO_URL", "http://localhost:8000"),
 		CentrifugoAPIKey: getEnv("CENTRIFUGO_API_KEY", ""),
+		Port:             getEnv("PORT", "8080"),
 	}
 }
 

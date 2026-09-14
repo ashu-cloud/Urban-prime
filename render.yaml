@@ -105,13 +105,15 @@ services:
         sync: false   # Use Stripe test key: sk_test_...
 
   # ─── Notification Service ─────────────────────────────────────────
-  - type: worker
+  - type: web
     name: urbanprime-notification
     runtime: image
     image:
       url: ghcr.io/ashu-cloud/urbanprime/notification-service:latest
     plan: free
     envVars:
+      - key: PORT
+        value: "8080"
       - key: REDIS_ADDR
         sync: false
       - key: CENTRIFUGO_URL
