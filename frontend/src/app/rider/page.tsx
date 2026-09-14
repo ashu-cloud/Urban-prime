@@ -384,6 +384,27 @@ function RiderPageContent() {
         paymentMethodId,
       });
       setCurrentTrip(resp);
+
+      // Instantly broadcast dispatch offer across realtime bus & active driver cockpit
+      const tripId = resp.tripId || (resp as any).id || (resp as any).trip_id || `trip_${Date.now()}`;
+      const feeBreakdown = calculatePlatformFee(finalFare);
+      realtimeBus.publishDispatchOffer({
+        tripId,
+        riderId: session?.userId || 'rid_001',
+        riderName: session?.name || 'VIP Guest',
+        pickupAddress,
+        dropoffAddress,
+        pickupLat: pickupCoords.lat,
+        pickupLng: pickupCoords.lng,
+        dropoffLat: dropoffCoords.lat,
+        dropoffLng: dropoffCoords.lng,
+        fareAmount: finalFare,
+        platformFee: feeBreakdown.platformFee,
+        driverNetFare: feeBreakdown.driverNetFare,
+        feePercentage: feeBreakdown.feePercentage,
+        expiresInSeconds: 15,
+        otp,
+      });
     } catch (err: any) {
       setIsIdle(true);
       setTripState('MATCHING');
