@@ -64,7 +64,7 @@ func NewConsumer(redisAddr, groupID string, assignDriverFunc AssignDriverFunc, c
 	// Ensure the consumer group exists. $ means: only deliver new messages.
 	// MKSTREAM creates the stream if it does not yet exist.
 	bgCtx := context.Background()
-	if err := client.XGroupCreateMkStream(bgCtx, TopicMatchEvents, groupID, "$").Err(); err != nil {
+	if err := client.XGroupCreateMkStream(bgCtx, TopicMatchEvents, groupID, "0").Err(); err != nil {
 		// BUSYGROUP means the group already exists — perfectly normal.
 		if err.Error() != "BUSYGROUP Consumer Group name already exists" {
 			// Non-fatal: log and continue — first messages may be missed but service recovers

@@ -90,7 +90,7 @@ func NewKafkaConsumer(redisAddr, groupID string, centrifugoClient *centrifugo.Cl
 	// Ensure consumer groups exist for all three streams
 	bgCtx := context.Background()
 	for _, stream := range []string{TopicDriverLocation, TopicTripEvents, TopicMatchEvents} {
-		if err := client.XGroupCreateMkStream(bgCtx, stream, groupID, "$").Err(); err != nil {
+		if err := client.XGroupCreateMkStream(bgCtx, stream, groupID, "0").Err(); err != nil {
 			if err.Error() != "BUSYGROUP Consumer Group name already exists" {
 				logger.Warn(bgCtx, "Notification consumer group create warning", "stream", stream, "error", err)
 			}

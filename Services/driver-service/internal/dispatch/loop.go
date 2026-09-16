@@ -129,12 +129,14 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 		}
 
 		// STEP 3b: PUBLISH `MatchOffered` EVENT TO KAFKA TOPIC `driver.match.v1`
-		_ = d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
+		if err := d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
 			EventType: "OFFERED",
 			TripID:    tripID,
 			DriverID:  driverID,
 			Timestamp: time.Now(),
-		})
+		}); err != nil {
+			logger.Warn(ctx, "Failed to publish OFFERED match event", "error", err)
+		}
 
 		logger.Info(ctx, fmt.Sprintf("Dispatch Offer #%d sent to driver", attempts), "driver_id", driverID, "driver_name", driver.Name, "trip_id", tripID)
 
@@ -161,12 +163,14 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 			_ = d.geoService.ReleaseDispatchLock(ctx, driverID)
 
 			// Publish `MatchAccepted` event to Kafka
-			_ = d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
+			if err := d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
 				EventType: "ACCEPTED",
 				TripID:    tripID,
 				DriverID:  driverID,
 				Timestamp: time.Now(),
-			})
+			}); err != nil {
+				logger.Warn(ctx, "Failed to publish ACCEPTED match event", "error", err)
+			}
 
 			driver.Status = domain.StatusOnTrip
 			return driver, nil
@@ -179,24 +183,28 @@ func (d *DispatchLoop) FindAndDispatchDriver(
 		_ = d.geoService.ReleaseDispatchLock(ctx, driverID)
 
 		// Publish `MatchDeclined` event to Kafka
-		_ = d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
+		if err := d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
 			EventType: "DECLINED",
 			TripID:    tripID,
 			DriverID:  driverID,
 			Reason:    "Timeout or declined by driver",
 			Timestamp: time.Now(),
-		})
+		}); err != nil {
+			logger.Warn(ctx, "Failed to publish DECLINED match event", "error", err)
+		}
 	}
 
 	// STEP 4: ALL CANDIDATES EXHAUSTED WITHOUT MATCH ACCEPTANCE
 	logger.Warn(ctx, "Dispatch Loop Exhausted: No available drivers accepted the trip request", "trip_id", tripID, "attempts", attempts)
 
-	_ = d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
+	if err := d.producer.PublishMatchEvent(ctx, "driver.match.v1", kafka.MatchEventPayload{
 		EventType: "EXHAUSTED",
 		TripID:    tripID,
 		Attempts:  attempts,
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		logger.Warn(ctx, "Failed to publish EXHAUSTED match event", "error", err)
+	}
 
 	return nil, nil
 }

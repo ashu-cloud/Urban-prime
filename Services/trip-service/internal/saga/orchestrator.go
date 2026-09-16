@@ -177,7 +177,9 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 	trip.SagaLog = append(trip.SagaLog, matchingStep)
 
 	eventPayload.Status = string(domain.StatusMatching)
-	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", eventPayload)
+	if err := s.producer.PublishTripEvent(ctx, "trip.events.v1", eventPayload); err != nil {
+		logger.Warn(ctx, "Failed to publish trip event", "error", err)
+	}
 
 	logger.Info(ctx, "Saga Completed Successfully: Trip created & in MATCHING state", "trip_id", trip.ID, "fare_inr", float64(trip.FinalFareCents)/100.0)
 
@@ -197,11 +199,13 @@ func (s *Orchestrator) AssignDriverToTrip(ctx context.Context, tripID, driverID 
 		return fmt.Errorf("failed to assign driver in repository: %w", err)
 	}
 
-	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
+	if err := s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
 		TripID:    tripID,
 		Status:    string(domain.StatusAssigned),
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		logger.Warn(ctx, "Failed to publish assigned trip event", "error", err)
+	}
 
 	return nil
 }
@@ -226,11 +230,13 @@ func (s *Orchestrator) CompensateNoDriverAvailable(ctx context.Context, tripID s
 		}
 	}
 
-	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
+	if err := s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
 		TripID:    tripID,
 		Status:    string(domain.StatusCancelledNoDriver),
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		logger.Warn(ctx, "Failed to publish no driver available trip event", "error", err)
+	}
 }
 
 func (s *Orchestrator) CompensateTripCreation(ctx context.Context, tripID string, reason string) {
@@ -252,9 +258,11 @@ func (s *Orchestrator) CompensateTripCreation(ctx context.Context, tripID string
 		}
 	}
 
-	_ = s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
+	if err := s.producer.PublishTripEvent(ctx, "trip.events.v1", kafka.TripEventPayload{
 		TripID:    tripID,
 		Status:    string(domain.StatusCancelled),
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		logger.Warn(ctx, "Failed to publish cancelled trip event", "error", err)
+	}
 }

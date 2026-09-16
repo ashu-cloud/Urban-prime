@@ -61,7 +61,7 @@ func NewConsumer(redisAddr, groupID string, dispatchFunc DispatchFunc) (*Consume
 
 	// Create consumer group if it does not yet exist
 	bgCtx := context.Background()
-	if err := client.XGroupCreateMkStream(bgCtx, TopicTripEvents, groupID, "$").Err(); err != nil {
+	if err := client.XGroupCreateMkStream(bgCtx, TopicTripEvents, groupID, "0").Err(); err != nil {
 		if err.Error() != "BUSYGROUP Consumer Group name already exists" {
 			logger.Warn(bgCtx, "Driver consumer group create warning", "stream", TopicTripEvents, "error", err)
 		}

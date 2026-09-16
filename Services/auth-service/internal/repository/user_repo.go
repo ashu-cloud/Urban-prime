@@ -216,7 +216,9 @@ func (r *UserRepository) SaveRefreshToken(ctx context.Context, token *domain.Ref
 			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (token_hash) DO NOTHING
 		`
-		_, _ = pool.Exec(ctx, query, token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.Revoked, token.CreatedAt)
+		if _, err := pool.Exec(ctx, query, token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.Revoked, token.CreatedAt); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -233,7 +235,9 @@ func (r *UserRepository) RevokeUserRefreshTokens(ctx context.Context, userID str
 
 	if pool != nil {
 		query := `UPDATE refresh_tokens SET revoked = true WHERE user_id = $1`
-		_, _ = pool.Exec(ctx, query, userID)
+		if _, err := pool.Exec(ctx, query, userID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

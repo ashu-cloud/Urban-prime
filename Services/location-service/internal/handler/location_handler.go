@@ -72,7 +72,7 @@ func (h *LocationHandler) UpdateDriverLocation(ctx context.Context, req *locatio
 
 	// STEP 2: Publish to Kafka (async best-effort — for downstream WebSocket fanout)
 	// The Notification Service consumes this event and pushes to the rider's Centrifugo channel
-	_ = h.producer.PublishLocationUpdate(ctx, kafka.LocationEvent{
+	if err := h.producer.PublishLocationUpdate(ctx, kafka.LocationEvent{
 		DriverID:  req.DriverId,
 		TripID:    req.TripId,
 		Latitude:  req.Latitude,
@@ -80,7 +80,9 @@ func (h *LocationHandler) UpdateDriverLocation(ctx context.Context, req *locatio
 		SpeedKmh:  req.SpeedKmh,
 		Bearing:   req.Bearing,
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		logger.Warn(ctx, "Failed to publish location update", "error", err)
+	}
 
 	return &locationv1.UpdateDriverLocationResponse{Success: true}, nil
 }

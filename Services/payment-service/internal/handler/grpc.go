@@ -76,8 +76,9 @@ func (h *PaymentHandler) AuthorizeHold(ctx context.Context, req *paymentv1.Autho
 
 	tx.Status = domain.StatusHoldSuccess
 	if err := h.repo.Create(ctx, tx); err != nil {
-		// Log error, but Stripe succeeded. In production, we'd queue a retry to save to DB or release the hold.
-		logger.Error(ctx, "Failed to save transaction to DB", "error", err)
+		// Log error, and release the hold at Stripe since we couldn't persist it
+		logger.Error(ctx, "Failed to save transaction to DB, releasing Stripe hold to prevent orphans", "error", err)
+		_ = h.stripeClient.ReleaseHold(ctx, paymentIntentID)
 		return nil, status.Errorf(codes.Internal, "failed to persist transaction")
 	}
 
