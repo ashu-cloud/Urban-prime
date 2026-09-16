@@ -24,6 +24,6 @@ WORKDIR /app
 
 COPY --from=builder /bin/payment-service .
 
-EXPOSE 50054
+EXPOSE 8054 50054
 
 CMD ["./payment-service"]

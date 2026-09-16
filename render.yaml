@@ -50,12 +50,9 @@ services:
         fromService:
           name: urbanprime-driver
           type: web
-          property: host
+          property: hostport
       - key: PAYMENT_SERVICE_ADDR
-        fromService:
-          name: urbanprime-payment
-          type: web
-          property: host
+        value: "urbanprime-payment:50054"   # Internal gRPC address — set manually if fromService doesn't include port
 
   # ─── Driver Service ───────────────────────────────────────────────
   - type: web
@@ -97,8 +94,10 @@ services:
       url: ghcr.io/ashu-cloud/urbanprime/payment-service:latest
     plan: free
     envVars:
+      - key: PAYMENT_SERVICE_HTTP_PORT
+        value: "8054"   # HTTP health check port (Render requires this for web services)
       - key: PAYMENT_SERVICE_PORT
-        value: "50054"
+        value: "50054"  # Internal gRPC port
       - key: POSTGRES_DSN
         sync: false
       - key: STRIPE_SECRET_KEY

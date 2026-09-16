@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -45,30 +48,55 @@ func main() {
 	// Initialize gRPC Handler
 	grpcHandler := handler.NewPaymentHandler(repo, stripeClient)
 
-	// Setup gRPC Server
+	// Setup gRPC Server on internal gRPC port
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		log.Fatalf("Failed to listen on gRPC port %s: %v", cfg.Port, err)
 	}
 
 	grpcServer := grpc.NewServer()
 	paymentv1.RegisterPaymentServiceServer(grpcServer, grpcHandler)
 	reflection.Register(grpcServer)
 
-	// Graceful Shutdown
 	go func() {
-		logger.Info(ctx, "Starting Payment Service", "port", cfg.Port)
-		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatalf("Failed to serve: %v", err)
+		logger.Info(ctx, "Payment Service gRPC server listening", "port", cfg.Port)
+		if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			log.Fatalf("Failed to serve gRPC: %v", err)
 		}
 	}()
 
+	// HTTP Health Server — required by Render web service health checks
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"service":"payment-service","status":"running","grpc_port":"%s"}`, cfg.Port)
+	})
+
+	httpServer := &http.Server{
+		Addr:    ":" + cfg.HTTPPort,
+		Handler: mux,
+	}
+	go func() {
+		logger.Info(ctx, "Payment Service HTTP health server listening", "port", cfg.HTTPPort)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP health server error: %v", err)
+		}
+	}()
+
+	// Graceful Shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Info(ctx, "Shutting down Payment Service")
+	logger.Info(ctx, "Shutting down Payment Service gracefully...")
 	grpcServer.GracefulStop()
+	_ = httpServer.Shutdown(context.Background())
+	logger.Info(ctx, "Payment Service stopped cleanly")
 }
+
 
 func initSchema(ctx context.Context, pool *pgxpool.Pool) {
 	schema := `
