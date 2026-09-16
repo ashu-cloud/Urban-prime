@@ -175,6 +175,21 @@ export default function DriverPage() {
     }
   }, [router]);
 
+  // Sync driver status with backend whenever online state or session changes.
+  // CRITICAL: The dispatch loop (loop.go:112) checks PostgreSQL status before dispatching.
+  // If status stays OFFLINE, the driver is silently skipped — ride offers never appear.
+  useEffect(() => {
+    if (!session?.userId) return;
+    const status = isOnline ? 'AVAILABLE' : 'OFFLINE';
+    api.updateDriverStatus(
+      session.userId,
+      status,
+      driverPos.lat,
+      driverPos.lng
+    ).catch((e) => console.warn('[Driver] Failed to sync status with backend:', e));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.userId, isOnline]);
+
 
 
   // Fetch real road polyline whenever trip stage changes to navigation

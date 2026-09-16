@@ -404,6 +404,33 @@ export const api = {
     }
   },
 
+  // 6b. Update Driver Status in PostgreSQL (AVAILABLE / OFFLINE / ON_TRIP)
+  // This is CRITICAL for dispatch — the dispatch loop checks Postgres status before offering a ride.
+  async updateDriverStatus(
+    driverId: string,
+    status: 'AVAILABLE' | 'OFFLINE' | 'ON_TRIP',
+    lat?: number,
+    lng?: number
+  ): Promise<void> {
+    try {
+      const res = await apiFetch(`/api/v1/drivers/${driverId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          latitude: lat ?? 0,
+          longitude: lng ?? 0,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.warn(`updateDriverStatus non-OK (${res.status}):`, text);
+      }
+    } catch (err: any) {
+      console.warn('Failed to update driver status in backend:', err);
+    }
+  },
+
   // 7. Get Trip Details (/api/v1/trips/{id})
   async getTrip(tripId: string): Promise<TripResponse> {
     try {
@@ -438,3 +465,4 @@ export const api = {
     throw new Error('Failed to send dispatch response to driver service');
   },
 };
+

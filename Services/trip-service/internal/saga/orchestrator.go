@@ -135,7 +135,9 @@ func (s *Orchestrator) ExecuteCreateTripSaga(ctx context.Context, cmd CreateTrip
 	if err := s.repo.Create(ctx, trip); err != nil {
 		logger.Error(ctx, "Failed to persist trip to DB", "error", err)
 		// Compensate by releasing hold
-		_ = s.paymentClient.ReleaseHold(ctx, transactionID, tripID, "failed to persist trip to db")
+		if s.paymentClient != nil {
+			_ = s.paymentClient.ReleaseHold(ctx, transactionID, tripID, "failed to persist trip to db")
+		}
 		return nil, err
 	}
 
