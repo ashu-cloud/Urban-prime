@@ -174,6 +174,8 @@ func TestDispatchLoop_DriverDeclines(t *testing.T) {
 	prod := &MockKafkaProducer{}
 
 	loop := NewDispatchLoop(geoSvc, repo, prod)
+	loop.MaxDispatchDuration = 50 * time.Millisecond
+	loop.PollingInterval = 10 * time.Millisecond
 
 	// Simulate driver declining
 	loop.SimulateDriverResponse = func(ctx context.Context, driverID string) bool {
@@ -225,12 +227,53 @@ func TestDispatchLoop_NoCandidates(t *testing.T) {
 		return nil, nil
 	}
 	loop := NewDispatchLoop(geoSvc, &MockDriverRepo{}, &MockKafkaProducer{})
+	loop.MaxDispatchDuration = 50 * time.Millisecond
+	loop.PollingInterval = 10 * time.Millisecond
+
 	driver, err := loop.FindAndDispatchDriver(context.Background(), "trip_empty", 12.9, 77.5, "SEDAN")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if driver != nil {
 		t.Fatal("expected no driver")
+	}
+}
+
+func TestDispatchLoop_LateOnlineDriver(t *testing.T) {
+	geoSvc := NewMockGeoService()
+	repo := &MockDriverRepo{}
+	prod := &MockKafkaProducer{}
+
+	driverOnline := false
+	geoSvc.FindNearbyDriversFunc = func(ctx context.Context, lat, lng float64, radiusKm float64, limit int) ([]redis.GeoLocation, error) {
+		if !driverOnline {
+			return nil, nil // Driver is currently offline!
+		}
+		return []redis.GeoLocation{{Name: "driver_late"}}, nil
+	}
+
+	loop := NewDispatchLoop(geoSvc, repo, prod)
+	loop.MaxDispatchDuration = 300 * time.Millisecond
+	loop.PollingInterval = 30 * time.Millisecond
+	loop.SimulateDriverResponse = func(ctx context.Context, driverID string) bool {
+		return true // Accept when offered
+	}
+
+	// Simulate driver coming online 60ms after rider generates trip request
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		driverOnline = true
+	}()
+
+	driver, err := loop.FindAndDispatchDriver(context.Background(), "trip_late_driver", 12.9, 77.5, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if driver == nil {
+		t.Fatal("expected driver_late to be matched after coming online within window")
+	}
+	if driver.ID != "driver_late" {
+		t.Fatalf("expected driver_late, got %s", driver.ID)
 	}
 }
 
